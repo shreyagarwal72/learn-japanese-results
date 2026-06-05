@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { gradeColorClass } from "@/lib/config";
-import { verifyAdminPassword } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -26,74 +26,129 @@ type ResultRow = {
 };
 
 function AdminPage() {
-  const [authed, setAuthed] = useState(false);
-  const [pwd, setPwd] = useState("");
-  const [pwdError, setPwdError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
 
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setChecking(true);
-    setPwdError(null);
-    try {
-      const res = await verifyAdminPassword({ data: { password: pwd } });
-      if (res.ok) {
-        setAuthed(true);
-      } else {
-        setPwdError(res.error ?? "Incorrect password");
-      }
-    } catch {
-      setPwdError("Could not verify password. Please try again.");
-    } finally {
-      setChecking(false);
-    }
-  };
+  const checkRole = useCallback(async (uid: string) => {
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", uid)
+      .eq("role", "admin")
+      .maybeSingle();
+    setIsAdmin(!error && !!data);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      const u = data.session?.user ?? null;
+      setUser(u);
+      if (u) checkRole(u.id);
+      else setIsAdmin(false);
+      setLoadingAuth(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) checkRole(u.id);
+      else setIsAdmin(false);
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [checkRole]);
+
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-5">
+        <div className="max-w-sm text-center">
+          <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理者</p>
+          <h1 className="mt-2 text-2xl font-serif-jp">Admin Access</h1>
+          <p className="mt-4 text-sm text-muted-foreground">You need to sign in to view the admin panel.</p>
+          <button
+            onClick={() => navigate({ to: "/auth" })}
+            className="mt-6 bg-foreground px-6 py-3 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent"
+          >
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin === false) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-5">
+        <div className="max-w-sm text-center">
+          <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">権限なし</p>
+          <h1 className="mt-2 text-2xl font-serif-jp">Not Authorized</h1>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Signed in as <span className="text-foreground">{user.email}</span>, but you don't have admin access.
+          </p>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link to="/" className="border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">
+              Home
+            </Link>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                navigate({ to: "/auth" });
+              }}
+              className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin === null) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Checking permissions…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
-        <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
-          ← Back
-        </Link>
-
-        {!authed ? (
-          <div className="mx-auto mt-24 max-w-sm border border-border bg-card p-8">
-            <p className="text-center font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理者</p>
-            <h1 className="mt-2 text-center text-2xl font-serif-jp">Admin Access</h1>
-            <span className="accent-line mx-auto mt-4" />
-            <form onSubmit={handleAuth} className="mt-8 space-y-4">
-              <label className="block">
-                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</span>
-                <input
-                  type="password"
-                  value={pwd}
-                  onChange={(e) => {
-                    setPwd(e.target.value);
-                    setPwdError(null);
-                  }}
-                  className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 outline-none focus:border-accent"
-                  autoFocus
-                />
-                {pwdError && <span className="mt-1 block text-xs text-destructive">{pwdError}</span>}
-              </label>
-              <button
-                type="submit"
-                disabled={checking || pwd.length === 0}
-                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
-              >
-                {checking ? "Verifying…" : "Enter"}
-              </button>
-            </form>
-          </div>
-        ) : (
-          <Dashboard />
-        )}
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
+        <div className="flex items-center justify-between gap-3">
+          <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
+            ← Back
+          </Link>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              navigate({ to: "/auth" });
+            }}
+            className="text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-accent"
+          >
+            Sign Out
+          </button>
+        </div>
+        <Dashboard userEmail={user.email ?? ""} />
       </div>
     </div>
   );
 }
 
-function Dashboard() {
+function Dashboard({ userEmail }: { userEmail: string }) {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,11 +199,12 @@ function Dashboard() {
   };
 
   return (
-    <div className="mt-8">
-      <header className="mb-8">
+    <div className="mt-6 sm:mt-8">
+      <header className="mb-6 sm:mb-8">
         <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">提出物</p>
-        <h1 className="mt-2 text-2xl sm:text-3xl font-serif-jp">Admin Panel — All Submissions</h1>
-        <span className="accent-line mt-4" />
+        <h1 className="mt-2 text-xl sm:text-3xl font-serif-jp">Admin Panel — All Submissions</h1>
+        <span className="accent-line mt-4 block" />
+        <p className="mt-3 text-xs text-muted-foreground truncate">Signed in as {userEmail}</p>
       </header>
 
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -159,14 +215,14 @@ function Dashboard() {
           <button
             onClick={load}
             disabled={loading}
-            className="border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent disabled:opacity-60"
+            className="flex-1 sm:flex-none border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent disabled:opacity-60"
           >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
           <button
             onClick={exportCsv}
             disabled={rows.length === 0}
-            className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
+            className="flex-1 sm:flex-none bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
           >
             Export CSV
           </button>
@@ -179,8 +235,9 @@ function Dashboard() {
         </div>
       )}
 
-      <div className="overflow-x-auto border border-border">
-        <table className="w-full min-w-[640px] text-sm">
+      {/* Desktop / tablet: table */}
+      <div className="hidden md:block overflow-x-auto border border-border">
+        <table className="w-full text-sm">
           <thead className="bg-secondary text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
             <tr>
               <th className="px-4 py-3 font-normal">#</th>
@@ -194,17 +251,9 @@ function Dashboard() {
           </thead>
           <tbody>
             {loading && rows.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                  Loading…
-                </td>
-              </tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                  No submissions yet.
-                </td>
-              </tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">No submissions yet.</td></tr>
             ) : (
               rows.map((r, i) => (
                 <tr key={r.id} className="border-t border-border">
@@ -213,17 +262,47 @@ function Dashboard() {
                   <td className="px-4 py-3">{r.marks_obtained}</td>
                   <td className="px-4 py-3">{r.total_marks}</td>
                   <td className="px-4 py-3">{Number(r.percentage).toFixed(2)}%</td>
-                  <td className={`px-4 py-3 font-serif-jp text-lg ${gradeColorClass(r.grade)}`}>
-                    {r.grade}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {new Date(r.submitted_at).toLocaleString()}
-                  </td>
+                  <td className={`px-4 py-3 font-serif-jp text-lg ${gradeColorClass(r.grade)}`}>{r.grade}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{new Date(r.submitted_at).toLocaleString()}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="md:hidden space-y-3">
+        {loading && rows.length === 0 ? (
+          <p className="border border-border p-6 text-center text-sm text-muted-foreground">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="border border-border p-6 text-center text-sm text-muted-foreground">No submissions yet.</p>
+        ) : (
+          rows.map((r, i) => (
+            <div key={r.id} className="border border-border p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">#{i + 1}</p>
+                  <p className="mt-1 text-sm font-medium text-foreground break-words">{r.name}</p>
+                </div>
+                <div className={`font-serif-jp text-3xl leading-none ${gradeColorClass(r.grade)}`}>{r.grade}</div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="text-muted-foreground uppercase tracking-[0.15em]">Score</p>
+                  <p className="mt-1 text-foreground">{r.marks_obtained} / {r.total_marks}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground uppercase tracking-[0.15em]">Percentage</p>
+                  <p className="mt-1 text-foreground">{Number(r.percentage).toFixed(2)}%</p>
+                </div>
+              </div>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                {new Date(r.submitted_at).toLocaleString()}
+              </p>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
