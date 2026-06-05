@@ -23,9 +23,8 @@ type FormErrors = Partial<Record<keyof FormState, string>>;
 type ResultView = { percentage: number; grade: GradeDef; testName: string | null };
 
 function Index() {
-  const { data, isError, isFetching } = useConfig();
+  const { data } = useConfig();
   const config = data ?? DEFAULT_CONFIG;
-  const configFailed = isError;
 
   // Build the list of selectable tests: tests[] + activeTest (if not already in list)
   const tests = useMemo<TestDef[]>(() => {
