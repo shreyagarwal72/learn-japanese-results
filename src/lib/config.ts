@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import examPdf from "@/assets/Japanese_Exam_Paper.pdf.asset.json";
 
 export type GradeDef = {
   min: number;
@@ -8,7 +9,12 @@ export type GradeDef = {
   message: string;
 };
 
-export type TestDef = { id?: string; name: string; totalMarks: number };
+export type TestDef = {
+  id?: string;
+  name: string;
+  totalMarks: number;
+  pdfUrl?: string;
+};
 
 export type SiteConfig = {
   activeTest: TestDef | null;
@@ -17,9 +23,19 @@ export type SiteConfig = {
   grades: GradeDef[];
 };
 
-export const DEFAULT_CONFIG: SiteConfig = {
-  activeTest: null,
-  tests: [],
+// ---------------------------------------------------------------------------
+// Static config. Edit this file to add / remove tests. No GitHub JSON anymore.
+// ---------------------------------------------------------------------------
+const TODAYS_TEST: TestDef = {
+  id: "japanese-assessment-2026-06",
+  name: "Japanese Language Assessment",
+  totalMarks: 50,
+  pdfUrl: examPdf.url,
+};
+
+export const SITE_CONFIG: SiteConfig = {
+  activeTest: TODAYS_TEST,
+  tests: [TODAYS_TEST],
   site: {
     title: "Japanese Learning For All",
     subtitle: "Submit Your Test Results",
@@ -33,41 +49,15 @@ export const DEFAULT_CONFIG: SiteConfig = {
   ],
 };
 
-// Public raw JSON on GitHub. Update the file there and the site reflects it
-// on the next page load. Repo: github.com/shreyagarwal72/jlfa-config (file: config.json on main).
-// Override with VITE_CONFIG_URL if you want a different location.
-const CONFIG_URL =
-  (import.meta.env.VITE_CONFIG_URL as string | undefined) ||
-  "https://raw.githubusercontent.com/shreyagarwal72/jlfa-config/main/config.json";
-
-export const CONFIG_SOURCE_URL = CONFIG_URL;
-
-async function fetchConfig(): Promise<SiteConfig> {
-  const res = await fetch(`${CONFIG_URL}?t=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Config fetch failed (${res.status})`);
-  const json = (await res.json()) as Partial<SiteConfig>;
-  const tests = Array.isArray(json.tests) ? (json.tests as TestDef[]).filter((t) => t && t.name && Number(t.totalMarks) > 0) : [];
-  const activeTest = json.activeTest && json.activeTest.name && Number(json.activeTest.totalMarks) > 0 ? json.activeTest : null;
-  return {
-    activeTest,
-    tests,
-    site: { ...DEFAULT_CONFIG.site, ...(json.site ?? {}) },
-    grades:
-      Array.isArray(json.grades) && json.grades.length > 0
-        ? (json.grades as GradeDef[]).slice().sort((a, b) => b.min - a.min)
-        : DEFAULT_CONFIG.grades,
-  };
-}
+export const DEFAULT_CONFIG = SITE_CONFIG;
+export const MANUAL_VALUE = "__manual__";
 
 export function useConfig() {
   return useQuery({
     queryKey: ["site-config"],
-    queryFn: fetchConfig,
-    staleTime: 0,
-    gcTime: 0,
-    retry: 1,
-    refetchOnMount: "always",
-    placeholderData: DEFAULT_CONFIG,
+    queryFn: async () => SITE_CONFIG,
+    staleTime: Infinity,
+    placeholderData: SITE_CONFIG,
   });
 }
 
