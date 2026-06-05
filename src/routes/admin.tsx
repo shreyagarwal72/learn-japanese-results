@@ -78,9 +78,10 @@ function AdminPage() {
               </label>
               <button
                 type="submit"
-                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent"
+                disabled={checking || pwd.length === 0}
+                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
               >
-                Enter
+                {checking ? "Verifying…" : "Enter"}
               </button>
             </form>
           </div>
