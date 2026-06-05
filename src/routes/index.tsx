@@ -253,9 +253,9 @@ function Index() {
             <div className="mt-10 border-t border-border pt-8 text-center">
               <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Your Result</p>
               {result.testName && (
-                <p className="mt-2 font-serif-jp text-sm text-muted-foreground">{result.testName}</p>
+                <p className="mt-2 font-serif-jp text-sm text-muted-foreground break-words">{result.testName}</p>
               )}
-              <p className="mt-4 font-serif-jp text-5xl text-foreground">{result.percentage.toFixed(2)}%</p>
+              <p className="mt-4 font-serif-jp text-4xl sm:text-5xl text-foreground">{result.percentage.toFixed(2)}%</p>
               <p className={`mt-3 font-serif-jp text-3xl ${gradeColorClass(result.grade.letter)}`}>
                 {result.grade.letter}
               </p>
@@ -263,7 +263,11 @@ function Index() {
                 <span className="font-serif-jp">{result.grade.jp}</span> · {result.grade.en}
               </p>
               <span className="accent-line mx-auto mt-5" />
-              <p className="mt-5 font-serif-jp text-lg text-foreground">{result.grade.message}</p>
+              <div className="mx-auto mt-5 max-w-xs border border-accent/30 bg-secondary px-4 py-4">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">応援メッセージ</p>
+                <p className="mt-2 font-serif-jp text-lg text-foreground">{result.grade.message}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{result.grade.en}</p>
+              </div>
             </div>
           )}
         </section>
