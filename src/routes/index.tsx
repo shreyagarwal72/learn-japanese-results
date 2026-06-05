@@ -23,9 +23,8 @@ type FormErrors = Partial<Record<keyof FormState, string>>;
 type ResultView = { percentage: number; grade: GradeDef; testName: string | null };
 
 function Index() {
-  const { data, isError, isFetching } = useConfig();
+  const { data } = useConfig();
   const config = data ?? DEFAULT_CONFIG;
-  const configFailed = isError;
 
   // Build the list of selectable tests: tests[] + activeTest (if not already in list)
   const tests = useMemo<TestDef[]>(() => {
@@ -146,20 +145,30 @@ function Index() {
           <p className="mt-5 text-base text-muted-foreground">{config.site.subtitle}</p>
         </header>
 
-        {configFailed && !isFetching && (
-          <div className="mb-6 border border-accent/30 bg-accent/5 p-4 text-sm">
-            <p className="font-medium text-foreground">Test list couldn't be loaded</p>
-            <p className="mt-1 text-muted-foreground">
-              We couldn't reach the remote test configuration. You can still submit your result by entering the total marks manually below.
-            </p>
-          </div>
-        )}
-
         {selectedTest && (
           <div className="mb-6 border-l-2 border-accent bg-secondary px-5 py-4">
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Current Test</p>
             <p className="mt-1 font-serif-jp text-lg text-foreground">{selectedTest.name}</p>
             <p className="mt-1 text-xs text-muted-foreground">Out of {selectedTest.totalMarks} marks</p>
+            {selectedTest.pdfUrl && (
+              <div className="mt-3 flex flex-wrap gap-3">
+                <a
+                  href={selectedTest.pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 border border-accent px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background"
+                >
+                  View Test PDF →
+                </a>
+                <a
+                  href={selectedTest.pdfUrl}
+                  download
+                  className="inline-flex items-center gap-2 border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:border-foreground hover:text-foreground"
+                >
+                  Download PDF
+                </a>
+              </div>
+            )}
           </div>
         )}
 
