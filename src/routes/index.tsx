@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useConfig, gradeFor, gradeColorClass, type GradeDef } from "@/lib/config";
+import { useConfig, gradeFor, gradeColorClass, type GradeDef, type TestDef, DEFAULT_CONFIG } from "@/lib/config";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -15,26 +15,59 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
+const MANUAL_VALUE = "__manual__";
+
 type FormState = { name: string; total: string; obtained: string };
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
-type ResultView = {
-  percentage: number;
-  grade: GradeDef;
-};
+type ResultView = { percentage: number; grade: GradeDef; testName: string | null };
 
 function Index() {
-  const { data: config } = useConfig();
-  const activeTest = config?.activeTest ?? null;
+  const { data, isError, isFetching } = useConfig();
+  const config = data ?? DEFAULT_CONFIG;
+  const configFailed = isError;
 
-  const [form, setForm] = useState<FormState>({
-    name: "",
-    total: activeTest ? String(activeTest.totalMarks) : "",
-    obtained: "",
-  });
+  // Build the list of selectable tests: tests[] + activeTest (if not already in list)
+  const tests = useMemo<TestDef[]>(() => {
+    const list = [...(config.tests ?? [])];
+    if (config.activeTest && !list.some((t) => t.name === config.activeTest!.name)) {
+      list.unshift(config.activeTest);
+    }
+    return list;
+  }, [config.tests, config.activeTest]);
+
+  // Default selection: activeTest if present, else first test, else manual
+  const defaultTestKey = useMemo(() => {
+    if (config.activeTest) return config.activeTest.name;
+    if (tests.length > 0) return tests[0].name;
+    return MANUAL_VALUE;
+  }, [config.activeTest, tests]);
+
+  const [selectedTestKey, setSelectedTestKey] = useState<string>(defaultTestKey);
+
+  // Keep selection in sync when config arrives
+  useEffect(() => {
+    setSelectedTestKey(defaultTestKey);
+  }, [defaultTestKey]);
+
+  const selectedTest = useMemo<TestDef | null>(() => {
+    if (selectedTestKey === MANUAL_VALUE) return null;
+    return tests.find((t) => t.name === selectedTestKey) ?? null;
+  }, [selectedTestKey, tests]);
+
+  const [form, setForm] = useState<FormState>({ name: "", total: "", obtained: "" });
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ResultView | null>(null);
+
+  // Sync total marks when selected test changes
+  useEffect(() => {
+    setForm((f) => ({
+      ...f,
+      total: selectedTest ? String(selectedTest.totalMarks) : f.total,
+    }));
+    setErrors((er) => ({ ...er, total: undefined }));
+  }, [selectedTest]);
 
   const schema = useMemo(
     () =>
@@ -80,11 +113,13 @@ function Index() {
     const total = Number(parsed.data.total);
     const obtained = Number(parsed.data.obtained);
     const percentage = Math.round(((obtained / total) * 100) * 100) / 100;
-    const grade = gradeFor(percentage, config?.grades ?? []);
+    const grade = gradeFor(percentage, config.grades);
+    const testName = selectedTest?.name ?? null;
+    const recordName = testName ? `${parsed.data.name.trim()} — ${testName}` : parsed.data.name.trim();
 
     setSubmitting(true);
     const { error } = await supabase.from("results").insert({
-      name: parsed.data.name.trim(),
+      name: recordName,
       total_marks: total,
       marks_obtained: obtained,
       percentage,
@@ -98,7 +133,7 @@ function Index() {
     }
 
     toast.success("Result submitted");
-    setResult({ percentage, grade });
+    setResult({ percentage, grade, testName });
   };
 
   return (
@@ -106,22 +141,50 @@ function Index() {
       <main className="mx-auto flex min-h-screen max-w-xl flex-col items-stretch justify-center px-5 py-16 sm:px-8">
         <header className="mb-10 text-center">
           <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">日本語学習</p>
-          <h1 className="mt-3 text-3xl sm:text-4xl font-serif-jp text-foreground">
-            {config?.site.title ?? "Japanese Learning For All"}
-          </h1>
+          <h1 className="mt-3 text-3xl sm:text-4xl font-serif-jp text-foreground">{config.site.title}</h1>
           <span className="accent-line mx-auto mt-5" />
-          <p className="mt-5 text-base text-muted-foreground">
-            {config?.site.subtitle ?? "Submit Your Test Results"}
-          </p>
-          {activeTest && (
-            <p className="mt-3 text-xs uppercase tracking-widest text-muted-foreground">
-              Current test · <span className="text-foreground">{activeTest.name}</span>
-            </p>
-          )}
+          <p className="mt-5 text-base text-muted-foreground">{config.site.subtitle}</p>
         </header>
+
+        {configFailed && !isFetching && (
+          <div className="mb-6 border border-accent/30 bg-accent/5 p-4 text-sm">
+            <p className="font-medium text-foreground">Test list couldn't be loaded</p>
+            <p className="mt-1 text-muted-foreground">
+              We couldn't reach the remote test configuration. You can still submit your result by entering the total marks manually below.
+            </p>
+          </div>
+        )}
+
+        {selectedTest && (
+          <div className="mb-6 border-l-2 border-accent bg-secondary px-5 py-4">
+            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Current Test</p>
+            <p className="mt-1 font-serif-jp text-lg text-foreground">{selectedTest.name}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Out of {selectedTest.totalMarks} marks</p>
+          </div>
+        )}
 
         <section className="border border-border bg-card p-6 sm:p-10">
           <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+            {tests.length > 0 && (
+              <Field
+                label="Select Test"
+                input={
+                  <select
+                    value={selectedTestKey}
+                    onChange={(e) => setSelectedTestKey(e.target.value)}
+                    className="w-full border-b border-border bg-transparent px-1 py-2 text-foreground outline-none focus:border-accent"
+                  >
+                    {tests.map((t) => (
+                      <option key={t.name} value={t.name}>
+                        {t.name} · {t.totalMarks} marks
+                      </option>
+                    ))}
+                    <option value={MANUAL_VALUE}>— Enter manually —</option>
+                  </select>
+                }
+              />
+            )}
+
             <Field
               label="Student Name"
               error={errors.name}
@@ -138,7 +201,7 @@ function Index() {
             <Field
               label="Total Marks"
               error={errors.total}
-              hint={activeTest ? "Set by the current test configuration" : undefined}
+              hint={selectedTest ? "Set by the selected test" : undefined}
               input={
                 <input
                   type="number"
@@ -147,7 +210,7 @@ function Index() {
                   value={form.total}
                   onChange={handleChange("total")}
                   placeholder="100"
-                  disabled={!!activeTest}
+                  disabled={!!selectedTest}
                   className="w-full border-b border-border bg-transparent px-1 py-2 text-foreground outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-70"
                 />
               }
@@ -180,6 +243,9 @@ function Index() {
           {result && (
             <div className="mt-10 border-t border-border pt-8 text-center">
               <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Your Result</p>
+              {result.testName && (
+                <p className="mt-2 font-serif-jp text-sm text-muted-foreground">{result.testName}</p>
+              )}
               <p className="mt-4 font-serif-jp text-5xl text-foreground">{result.percentage.toFixed(2)}%</p>
               <p className={`mt-3 font-serif-jp text-3xl ${gradeColorClass(result.grade.letter)}`}>
                 {result.grade.letter}

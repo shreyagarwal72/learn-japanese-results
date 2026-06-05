@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { gradeColorClass } from "@/lib/config";
+import { verifyAdminPassword } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -13,8 +14,6 @@ export const Route = createFileRoute("/admin")({
   }),
   component: AdminPage,
 });
-
-const ADMIN_PASSWORD = "jlfa2025";
 
 type ResultRow = {
   id: string;
@@ -30,14 +29,23 @@ function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [pwd, setPwd] = useState("");
   const [pwdError, setPwdError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pwd === ADMIN_PASSWORD) {
-      setAuthed(true);
-      setPwdError(null);
-    } else {
-      setPwdError("Incorrect password");
+    setChecking(true);
+    setPwdError(null);
+    try {
+      const res = await verifyAdminPassword({ data: { password: pwd } });
+      if (res.ok) {
+        setAuthed(true);
+      } else {
+        setPwdError(res.error ?? "Incorrect password");
+      }
+    } catch {
+      setPwdError("Could not verify password. Please try again.");
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -70,9 +78,10 @@ function AdminPage() {
               </label>
               <button
                 type="submit"
-                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent"
+                disabled={checking || pwd.length === 0}
+                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
               >
-                Enter
+                {checking ? "Verifying…" : "Enter"}
               </button>
             </form>
           </div>

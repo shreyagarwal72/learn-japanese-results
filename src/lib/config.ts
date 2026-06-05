@@ -8,14 +8,18 @@ export type GradeDef = {
   message: string;
 };
 
+export type TestDef = { id?: string; name: string; totalMarks: number };
+
 export type SiteConfig = {
-  activeTest: { name: string; totalMarks: number } | null;
+  activeTest: TestDef | null;
+  tests: TestDef[];
   site: { title: string; subtitle: string };
   grades: GradeDef[];
 };
 
 export const DEFAULT_CONFIG: SiteConfig = {
   activeTest: null,
+  tests: [],
   site: {
     title: "Japanese Learning For All",
     subtitle: "Submit Your Test Results",
@@ -36,22 +40,23 @@ const CONFIG_URL =
   (import.meta.env.VITE_CONFIG_URL as string | undefined) ||
   "https://raw.githubusercontent.com/shreyagarwal72/jlfa-config/main/config.json";
 
+export const CONFIG_SOURCE_URL = CONFIG_URL;
+
 async function fetchConfig(): Promise<SiteConfig> {
-  try {
-    const res = await fetch(`${CONFIG_URL}?t=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return DEFAULT_CONFIG;
-    const json = (await res.json()) as Partial<SiteConfig>;
-    return {
-      activeTest: json.activeTest ?? DEFAULT_CONFIG.activeTest,
-      site: { ...DEFAULT_CONFIG.site, ...(json.site ?? {}) },
-      grades:
-        Array.isArray(json.grades) && json.grades.length > 0
-          ? (json.grades as GradeDef[]).slice().sort((a, b) => b.min - a.min)
-          : DEFAULT_CONFIG.grades,
-    };
-  } catch {
-    return DEFAULT_CONFIG;
-  }
+  const res = await fetch(`${CONFIG_URL}?t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Config fetch failed (${res.status})`);
+  const json = (await res.json()) as Partial<SiteConfig>;
+  const tests = Array.isArray(json.tests) ? (json.tests as TestDef[]).filter((t) => t && t.name && Number(t.totalMarks) > 0) : [];
+  const activeTest = json.activeTest && json.activeTest.name && Number(json.activeTest.totalMarks) > 0 ? json.activeTest : null;
+  return {
+    activeTest,
+    tests,
+    site: { ...DEFAULT_CONFIG.site, ...(json.site ?? {}) },
+    grades:
+      Array.isArray(json.grades) && json.grades.length > 0
+        ? (json.grades as GradeDef[]).slice().sort((a, b) => b.min - a.min)
+        : DEFAULT_CONFIG.grades,
+  };
 }
 
 export function useConfig() {
@@ -60,6 +65,7 @@ export function useConfig() {
     queryFn: fetchConfig,
     staleTime: 0,
     gcTime: 0,
+    retry: 1,
     refetchOnMount: "always",
     placeholderData: DEFAULT_CONFIG,
   });
