@@ -1,15 +1,15 @@
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+// Frontend-only admin password check (SPA build — no server runtime).
+// Set VITE_ADMIN_PASSWORD in your Vercel env vars to override the default.
+// WARNING: anyone can inspect the bundle and see this value. For real
+// security use Supabase Auth + a role.
+const ADMIN_PASSWORD =
+  (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) || "jlfa2025";
 
-export const verifyAdminPassword = createServerFn({ method: "POST" })
-  .inputValidator((input: { password: string }) =>
-    z.object({ password: z.string().min(1).max(200) }).parse(input),
-  )
-  .handler(async ({ data }) => {
-    const expected = process.env.ADMIN_PASSWORD;
-    if (!expected) {
-      return { ok: false, error: "Admin password is not configured on the server." };
-    }
-    if (data.password === expected) return { ok: true as const };
-    return { ok: false as const, error: "Incorrect password" };
-  });
+export async function verifyAdminPassword({
+  data,
+}: {
+  data: { password: string };
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (data.password === ADMIN_PASSWORD) return { ok: true };
+  return { ok: false, error: "Incorrect password" };
+}
