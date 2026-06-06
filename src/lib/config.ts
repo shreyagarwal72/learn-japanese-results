@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import examPdf from "@/assets/Japanese_Exam_Paper.pdf.asset.json";
 
 export type GradeDef = {
   /** Minimum raw marks required for this grade (out of total). */
@@ -14,7 +13,8 @@ export type TestDef = {
   id?: string;
   name: string;
   totalMarks: number;
-  pdfUrl?: string;
+  questionPaperUrl?: string;
+  answerKeyUrl?: string;
 };
 
 export type SiteConfig = {
@@ -31,7 +31,8 @@ const TODAYS_TEST: TestDef = {
   id: "japanese-assessment-2026-06",
   name: "Japanese Language Assessment",
   totalMarks: 50,
-  pdfUrl: examPdf.url,
+  questionPaperUrl: "https://kklz19o6an7qwti4.public.blob.vercel-storage.com/Japanese_Exam_Paper.pdf",
+  answerKeyUrl: "https://kklz19o6an7qwti4.public.blob.vercel-storage.com/Japanese_Exam_Answer_Key.pdf",
 };
 
 export const SITE_CONFIG: SiteConfig = {
