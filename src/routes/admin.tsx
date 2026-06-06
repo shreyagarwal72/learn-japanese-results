@@ -1,6 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { gradeColorClass } from "@/lib/config";
 
@@ -15,6 +14,9 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
+const ADMIN_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) ?? "jlfa2025";
+const STORAGE_KEY = "jlfa_admin_ok";
+
 type ResultRow = {
   id: string;
   name: string;
@@ -26,101 +28,58 @@ type ResultRow = {
 };
 
 function AdminPage() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [authed, setAuthed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem(STORAGE_KEY) === "1";
+  });
+  const [pw, setPw] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const checkRole = useCallback(async (uid: string) => {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", uid)
-      .eq("role", "admin")
-      .maybeSingle();
-    setIsAdmin(!error && !!data);
-  }, []);
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pw === ADMIN_PASSWORD) {
+      sessionStorage.setItem(STORAGE_KEY, "1");
+      setAuthed(true);
+      setError(null);
+    } else {
+      setError("Incorrect password.");
+    }
+  };
 
-  useEffect(() => {
-    let cancelled = false;
-    supabase.auth.getSession().then(({ data }) => {
-      if (cancelled) return;
-      const u = data.session?.user ?? null;
-      setUser(u);
-      if (u) checkRole(u.id);
-      else setIsAdmin(false);
-      setLoadingAuth(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) checkRole(u.id);
-      else setIsAdmin(false);
-    });
-    return () => {
-      cancelled = true;
-      sub.subscription.unsubscribe();
-    };
-  }, [checkRole]);
-
-  if (loadingAuth) {
+  if (!authed) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-5">
-        <div className="max-w-sm text-center">
-          <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理者</p>
-          <h1 className="mt-2 text-2xl font-serif-jp">Admin Access</h1>
-          <p className="mt-4 text-sm text-muted-foreground">You need to sign in to view the admin panel.</p>
-          <button
-            onClick={() => navigate({ to: "/auth" })}
-            className="mt-6 bg-foreground px-6 py-3 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent"
-          >
-            Sign In
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (isAdmin === false) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-5">
-        <div className="max-w-sm text-center">
-          <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">権限なし</p>
-          <h1 className="mt-2 text-2xl font-serif-jp">Not Authorized</h1>
-          <p className="mt-4 text-sm text-muted-foreground">
-            Signed in as <span className="text-foreground">{user.email}</span>, but you don't have admin access.
-          </p>
-          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <Link to="/" className="border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">
-              Home
-            </Link>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                navigate({ to: "/auth" });
-              }}
-              className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent"
-            >
-              Sign Out
-            </button>
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="mx-auto max-w-sm px-5 py-10 sm:px-8">
+          <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
+            ← Back
+          </Link>
+          <div className="mt-16 border border-border bg-card p-6 sm:p-8">
+            <p className="text-center font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理者</p>
+            <h1 className="mt-2 text-center text-2xl font-serif-jp">Admin Access</h1>
+            <span className="accent-line mx-auto mt-4" />
+            <form onSubmit={onSubmit} className="mt-8 space-y-4">
+              <label className="block">
+                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</span>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 outline-none focus:border-accent"
+                  autoComplete="current-password"
+                />
+              </label>
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <button
+                type="submit"
+                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent"
+              >
+                Enter
+              </button>
+            </form>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (isAdmin === null) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Checking permissions…</p>
       </div>
     );
   }
@@ -133,22 +92,23 @@ function AdminPage() {
             ← Back
           </Link>
           <button
-            onClick={async () => {
-              await supabase.auth.signOut();
-              navigate({ to: "/auth" });
+            onClick={() => {
+              sessionStorage.removeItem(STORAGE_KEY);
+              setAuthed(false);
+              setPw("");
             }}
             className="text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-accent"
           >
-            Sign Out
+            Log Out
           </button>
         </div>
-        <Dashboard userEmail={user.email ?? ""} />
+        <Dashboard />
       </div>
     </div>
   );
 }
 
-function Dashboard({ userEmail }: { userEmail: string }) {
+function Dashboard() {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -204,7 +164,6 @@ function Dashboard({ userEmail }: { userEmail: string }) {
         <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">提出物</p>
         <h1 className="mt-2 text-xl sm:text-3xl font-serif-jp">Admin Panel — All Submissions</h1>
         <span className="accent-line mt-4 block" />
-        <p className="mt-3 text-xs text-muted-foreground truncate">Signed in as {userEmail}</p>
       </header>
 
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -235,7 +194,6 @@ function Dashboard({ userEmail }: { userEmail: string }) {
         </div>
       )}
 
-      {/* Desktop / tablet: table */}
       <div className="hidden md:block overflow-x-auto border border-border">
         <table className="w-full text-sm">
           <thead className="bg-secondary text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
@@ -271,7 +229,6 @@ function Dashboard({ userEmail }: { userEmail: string }) {
         </table>
       </div>
 
-      {/* Mobile: cards */}
       <div className="md:hidden space-y-3">
         {loading && rows.length === 0 ? (
           <p className="border border-border p-6 text-center text-sm text-muted-foreground">Loading…</p>
