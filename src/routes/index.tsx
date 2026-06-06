@@ -272,7 +272,10 @@ function Index() {
           )}
         </section>
 
-        <footer className="mt-16 text-center">
+        <footer className="mt-16 flex items-center justify-center gap-6">
+          <Link to="/leaderboard" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
+            Leaderboard
+          </Link>
           <Link to="/admin" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
             Admin
           </Link>
