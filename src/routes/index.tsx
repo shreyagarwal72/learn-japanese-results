@@ -112,7 +112,7 @@ function Index() {
     const total = Number(parsed.data.total);
     const obtained = Number(parsed.data.obtained);
     const percentage = Math.round(((obtained / total) * 100) * 100) / 100;
-    const grade = gradeFor(percentage, config.grades);
+    const grade = gradeFor(obtained, config.grades);
     const testName = selectedTest?.name ?? null;
     const recordName = testName ? `${parsed.data.name.trim()} — ${testName}` : parsed.data.name.trim();
 
