@@ -29,6 +29,7 @@
   --color-grade-a: var(--grade-a);
   --color-grade-b: var(--grade-b);
   --color-grade-c: var(--grade-c);
+  --color-grade-d: var(--grade-d);
   --color-grade-f: var(--grade-f);
   --font-serif-jp: "Noto Serif JP", serif;
   --font-sans: "DM Sans", system-ui, sans-serif;
