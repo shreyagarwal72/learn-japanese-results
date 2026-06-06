@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { gradeColorClass } from "@/lib/config";
 
@@ -26,6 +27,8 @@ type ResultRow = {
   grade: "S" | "A" | "B" | "C" | "F";
   submitted_at: string;
 };
+
+type RankedRow = ResultRow & { rank: number };
 
 function AdminPage() {
   const [authed, setAuthed] = useState<boolean>(() => {
@@ -112,6 +115,7 @@ function Dashboard() {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,26 +138,77 @@ function Dashboard() {
     load();
   }, [load]);
 
+  // Rank by percentage (desc), tie-break: earlier submission wins.
+  const ranked = useMemo<RankedRow[]>(() => {
+    const sorted = rows.slice().sort((a, b) => {
+      if (b.percentage !== a.percentage) return b.percentage - a.percentage;
+      return new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime();
+    });
+    // Dense ranking on percentage (ties share rank).
+    let lastPct: number | null = null;
+    let lastRank = 0;
+    return sorted.map((r, i) => {
+      const rank = lastPct !== null && r.percentage === lastPct ? lastRank : i + 1;
+      lastPct = r.percentage;
+      lastRank = rank;
+      return { ...r, rank };
+    });
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return ranked;
+    return ranked.filter((r) => r.name.toLowerCase().includes(q) || r.grade.toLowerCase() === q);
+  }, [ranked, query]);
+
+  const stats = useMemo(() => {
+    if (ranked.length === 0) return null;
+    const avg = ranked.reduce((s, r) => s + Number(r.percentage), 0) / ranked.length;
+    const top = ranked[0];
+    const passed = ranked.filter((r) => r.grade !== "F").length;
+    return { avg, top, passed, total: ranked.length };
+  }, [ranked]);
+
+  const exportXlsx = () => {
+    const sheetData = filtered.map((r) => ({
+      Rank: r.rank,
+      Name: r.name,
+      "Marks Obtained": r.marks_obtained,
+      "Total Marks": r.total_marks,
+      "Percentage (%)": Number(Number(r.percentage).toFixed(2)),
+      Grade: r.grade,
+      "Submitted At": new Date(r.submitted_at).toLocaleString(),
+    }));
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    ws["!cols"] = [
+      { wch: 6 }, { wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 22 },
+    ];
+    // Freeze header row
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 } as never;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Leaderboard");
+    XLSX.writeFile(wb, `leaderboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   const exportCsv = () => {
-    const header = ["#", "Name", "Marks Obtained", "Total Marks", "Percentage", "Grade", "Submitted At"];
+    const header = ["Rank", "Name", "Marks Obtained", "Total Marks", "Percentage", "Grade", "Submitted At"];
     const lines = [header.join(",")];
-    rows.forEach((r, i) => {
-      const cells = [
-        String(i + 1),
+    filtered.forEach((r) => {
+      lines.push([
+        String(r.rank),
         csvCell(r.name),
         String(r.marks_obtained),
         String(r.total_marks),
         Number(r.percentage).toFixed(2),
         r.grade,
         new Date(r.submitted_at).toISOString(),
-      ];
-      lines.push(cells.join(","));
+      ].join(","));
     });
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `results-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `leaderboard-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -161,15 +216,29 @@ function Dashboard() {
   return (
     <div className="mt-6 sm:mt-8">
       <header className="mb-6 sm:mb-8">
-        <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">提出物</p>
-        <h1 className="mt-2 text-xl sm:text-3xl font-serif-jp">Admin Panel — All Submissions</h1>
+        <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">順位表</p>
+        <h1 className="mt-2 text-xl sm:text-3xl font-serif-jp">Leaderboard</h1>
         <span className="accent-line mt-4 block" />
       </header>
 
+      {/* Stats */}
+      {stats && (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard label="Submissions" value={String(stats.total)} />
+          <StatCard label="Passed" value={`${stats.passed} / ${stats.total}`} />
+          <StatCard label="Average" value={`${stats.avg.toFixed(1)}%`} />
+          <StatCard label="Top Score" value={`${Number(stats.top.percentage).toFixed(1)}%`} sub={stats.top.name} />
+        </div>
+      )}
+
+      {/* Controls */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Total submissions: <span className="font-medium text-foreground">{rows.length}</span>
-        </p>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search name or grade (S/A/B/C/F)…"
+          className="w-full sm:max-w-xs border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
+        />
         <div className="flex flex-wrap gap-2">
           <button
             onClick={load}
@@ -180,10 +249,17 @@ function Dashboard() {
           </button>
           <button
             onClick={exportCsv}
-            disabled={rows.length === 0}
+            disabled={filtered.length === 0}
+            className="flex-1 sm:flex-none border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent disabled:opacity-60"
+          >
+            CSV
+          </button>
+          <button
+            onClick={exportXlsx}
+            disabled={filtered.length === 0}
             className="flex-1 sm:flex-none bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
           >
-            Export CSV
+            Export XLSX
           </button>
         </div>
       </div>
@@ -194,31 +270,30 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Desktop table */}
       <div className="hidden md:block overflow-x-auto border border-border">
         <table className="w-full text-sm">
           <thead className="bg-secondary text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-normal">#</th>
+              <th className="px-4 py-3 font-normal w-16">Rank</th>
               <th className="px-4 py-3 font-normal">Name</th>
-              <th className="px-4 py-3 font-normal">Obtained</th>
-              <th className="px-4 py-3 font-normal">Total</th>
+              <th className="px-4 py-3 font-normal">Score</th>
               <th className="px-4 py-3 font-normal">Percentage</th>
               <th className="px-4 py-3 font-normal">Grade</th>
               <th className="px-4 py-3 font-normal">Date</th>
             </tr>
           </thead>
           <tbody>
-            {loading && rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">Loading…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">No submissions yet.</td></tr>
+            {loading && filtered.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Loading…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">No submissions.</td></tr>
             ) : (
-              rows.map((r, i) => (
-                <tr key={r.id} className="border-t border-border">
-                  <td className="px-4 py-3 text-muted-foreground">{i + 1}</td>
-                  <td className="px-4 py-3 text-foreground">{r.name}</td>
-                  <td className="px-4 py-3">{r.marks_obtained}</td>
-                  <td className="px-4 py-3">{r.total_marks}</td>
+              filtered.map((r) => (
+                <tr key={r.id} className={`border-t border-border ${rowHighlight(r.rank)}`}>
+                  <td className="px-4 py-3"><RankBadge rank={r.rank} /></td>
+                  <td className="px-4 py-3 text-foreground font-medium">{r.name}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{r.marks_obtained} / {r.total_marks}</td>
                   <td className="px-4 py-3">{Number(r.percentage).toFixed(2)}%</td>
                   <td className={`px-4 py-3 font-serif-jp text-lg ${gradeColorClass(r.grade)}`}>{r.grade}</td>
                   <td className="px-4 py-3 text-muted-foreground">{new Date(r.submitted_at).toLocaleString()}</td>
@@ -229,18 +304,19 @@ function Dashboard() {
         </table>
       </div>
 
+      {/* Mobile cards */}
       <div className="md:hidden space-y-3">
-        {loading && rows.length === 0 ? (
+        {loading && filtered.length === 0 ? (
           <p className="border border-border p-6 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : rows.length === 0 ? (
-          <p className="border border-border p-6 text-center text-sm text-muted-foreground">No submissions yet.</p>
+        ) : filtered.length === 0 ? (
+          <p className="border border-border p-6 text-center text-sm text-muted-foreground">No submissions.</p>
         ) : (
-          rows.map((r, i) => (
-            <div key={r.id} className="border border-border p-4">
+          filtered.map((r) => (
+            <div key={r.id} className={`border border-border p-4 ${rowHighlight(r.rank)}`}>
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-muted-foreground">#{i + 1}</p>
-                  <p className="mt-1 text-sm font-medium text-foreground break-words">{r.name}</p>
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <RankBadge rank={r.rank} />
+                  <p className="text-sm font-medium text-foreground break-words">{r.name}</p>
                 </div>
                 <div className={`font-serif-jp text-3xl leading-none ${gradeColorClass(r.grade)}`}>{r.grade}</div>
               </div>
@@ -263,6 +339,40 @@ function Dashboard() {
       </div>
     </div>
   );
+}
+
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="border border-border p-4">
+      <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+      <p className="mt-2 text-xl font-serif-jp text-foreground">{value}</p>
+      {sub && <p className="mt-1 text-xs text-muted-foreground truncate">{sub}</p>}
+    </div>
+  );
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank === 1) {
+    return <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-yellow-500/15 text-yellow-500 text-base">🥇</span>;
+  }
+  if (rank === 2) {
+    return <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-zinc-400/15 text-zinc-300 text-base">🥈</span>;
+  }
+  if (rank === 3) {
+    return <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-700/15 text-amber-600 text-base">🥉</span>;
+  }
+  return (
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border text-xs text-muted-foreground">
+      {rank}
+    </span>
+  );
+}
+
+function rowHighlight(rank: number) {
+  if (rank === 1) return "bg-yellow-500/5";
+  if (rank === 2) return "bg-zinc-400/5";
+  if (rank === 3) return "bg-amber-700/5";
+  return "";
 }
 
 function csvCell(s: string) {
