@@ -59,6 +59,7 @@
   --grade-a: oklch(0.58 0.16 145); /* green */
   --grade-b: oklch(0.55 0.16 245); /* blue */
   --grade-c: oklch(0.68 0.16 60);  /* orange */
+  --grade-d: oklch(0.62 0.17 40);  /* deep orange */
   --grade-f: oklch(0.55 0.20 27);  /* red */
 }
 
