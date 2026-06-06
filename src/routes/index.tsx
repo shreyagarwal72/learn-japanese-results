@@ -150,23 +150,27 @@ function Index() {
             <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Current Test</p>
             <p className="mt-1 font-serif-jp text-lg text-foreground">{selectedTest.name}</p>
             <p className="mt-1 text-xs text-muted-foreground">Out of {selectedTest.totalMarks} marks</p>
-            {selectedTest.pdfUrl && (
+            {(selectedTest.questionPaperUrl || selectedTest.answerKeyUrl) && (
               <div className="mt-3 flex flex-wrap gap-3">
-                <a
-                  href={selectedTest.pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 border border-accent px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background"
-                >
-                  View Test PDF →
-                </a>
-                <a
-                  href={selectedTest.pdfUrl}
-                  download
-                  className="inline-flex items-center gap-2 border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:border-foreground hover:text-foreground"
-                >
-                  Download PDF
-                </a>
+                {selectedTest.questionPaperUrl && (
+                  <a
+                    href={selectedTest.questionPaperUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 border border-accent px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-accent hover:bg-accent hover:text-background"
+                  >
+                    Question Paper →
+                  </a>
+                )}
+                {selectedTest.answerKeyUrl && (
+                  <a
+                    href={selectedTest.answerKeyUrl}
+                    download
+                    className="inline-flex items-center gap-2 border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:border-foreground hover:text-foreground"
+                  >
+                    Answer Paper
+                  </a>
+                )}
               </div>
             )}
           </div>
