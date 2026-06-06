@@ -112,7 +112,7 @@ function Index() {
     const total = Number(parsed.data.total);
     const obtained = Number(parsed.data.obtained);
     const percentage = Math.round(((obtained / total) * 100) * 100) / 100;
-    const grade = gradeFor(percentage, config.grades);
+    const grade = gradeFor(obtained, config.grades);
     const testName = selectedTest?.name ?? null;
     const recordName = testName ? `${parsed.data.name.trim()} — ${testName}` : parsed.data.name.trim();
 
@@ -272,7 +272,10 @@ function Index() {
           )}
         </section>
 
-        <footer className="mt-16 text-center">
+        <footer className="mt-16 flex items-center justify-center gap-6">
+          <Link to="/leaderboard" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
+            Leaderboard
+          </Link>
           <Link to="/admin" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
             Admin
           </Link>

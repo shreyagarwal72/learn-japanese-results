@@ -24,7 +24,7 @@ type ResultRow = {
   total_marks: number;
   marks_obtained: number;
   percentage: number;
-  grade: "S" | "A" | "B" | "C" | "F";
+  grade: "S" | "A" | "B" | "C" | "D" | "F";
   submitted_at: string;
 };
 
