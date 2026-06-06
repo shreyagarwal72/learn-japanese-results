@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import examPdf from "@/assets/Japanese_Exam_Paper.pdf.asset.json";
 
 export type GradeDef = {
+  /** Minimum raw marks required for this grade (out of total). */
   min: number;
-  letter: "S" | "A" | "B" | "C" | "F";
+  letter: "S" | "A" | "B" | "C" | "D" | "F";
   jp: string;
   en: string;
   message: string;
