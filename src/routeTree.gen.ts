@@ -13,6 +13,8 @@ import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TestTestIdRouteImport } from './routes/test.$testId'
+import { Route as TestTestIdAttemptAttemptIdRouteImport } from './routes/test.$testId.attempt.$attemptId'
 
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
@@ -34,18 +36,33 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TestTestIdRoute = TestTestIdRouteImport.update({
+  id: '/test/$testId',
+  path: '/test/$testId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestTestIdAttemptAttemptIdRoute =
+  TestTestIdAttemptAttemptIdRouteImport.update({
+    id: '/attempt/$attemptId',
+    path: '/attempt/$attemptId',
+    getParentRoute: () => TestTestIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/test/$testId': typeof TestTestIdRouteWithChildren
+  '/test/$testId/attempt/$attemptId': typeof TestTestIdAttemptAttemptIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/test/$testId': typeof TestTestIdRouteWithChildren
+  '/test/$testId/attempt/$attemptId': typeof TestTestIdAttemptAttemptIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +70,34 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/test/$testId': typeof TestTestIdRouteWithChildren
+  '/test/$testId/attempt/$attemptId': typeof TestTestIdAttemptAttemptIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/auth' | '/leaderboard'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/auth'
+    | '/leaderboard'
+    | '/test/$testId'
+    | '/test/$testId/attempt/$attemptId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/auth' | '/leaderboard'
-  id: '__root__' | '/' | '/admin' | '/auth' | '/leaderboard'
+  to:
+    | '/'
+    | '/admin'
+    | '/auth'
+    | '/leaderboard'
+    | '/test/$testId'
+    | '/test/$testId/attempt/$attemptId'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/auth'
+    | '/leaderboard'
+    | '/test/$testId'
+    | '/test/$testId/attempt/$attemptId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +105,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRoute
   LeaderboardRoute: typeof LeaderboardRoute
+  TestTestIdRoute: typeof TestTestIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -99,14 +138,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/test/$testId': {
+      id: '/test/$testId'
+      path: '/test/$testId'
+      fullPath: '/test/$testId'
+      preLoaderRoute: typeof TestTestIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test/$testId/attempt/$attemptId': {
+      id: '/test/$testId/attempt/$attemptId'
+      path: '/attempt/$attemptId'
+      fullPath: '/test/$testId/attempt/$attemptId'
+      preLoaderRoute: typeof TestTestIdAttemptAttemptIdRouteImport
+      parentRoute: typeof TestTestIdRoute
+    }
   }
 }
+
+interface TestTestIdRouteChildren {
+  TestTestIdAttemptAttemptIdRoute: typeof TestTestIdAttemptAttemptIdRoute
+}
+
+const TestTestIdRouteChildren: TestTestIdRouteChildren = {
+  TestTestIdAttemptAttemptIdRoute: TestTestIdAttemptAttemptIdRoute,
+}
+
+const TestTestIdRouteWithChildren = TestTestIdRoute._addFileChildren(
+  TestTestIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   AuthRoute: AuthRoute,
   LeaderboardRoute: LeaderboardRoute,
+  TestTestIdRoute: TestTestIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
