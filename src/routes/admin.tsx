@@ -1,383 +1,461 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState, useCallback, useMemo } from "react";
-import * as XLSX from "xlsx";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import * as XLSX from "xlsx";
+import {
+  adminListTests, adminCreateTest, adminUpdateTest, adminDeleteTest,
+  adminListQuestions, adminSaveQuestions, adminListAttempts, adminChangePassword,
+} from "@/lib/admin-tests.functions";
 import { gradeColorClass } from "@/lib/config";
 
 export const Route = createFileRoute("/admin")({
-  head: () => ({
-    meta: [
-      { title: "Admin — Japanese Learning For All" },
-      { name: "description", content: "Admin panel for viewing all submitted Japanese test results." },
-      { name: "robots", content: "noindex" },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "Admin — Japanese Learning For All" }, { name: "robots", content: "noindex" }] }),
   component: AdminPage,
 });
 
-const ADMIN_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) ?? "jlfa2025";
-const STORAGE_KEY = "jlfa_admin_ok";
-
-type ResultRow = {
-  id: string;
-  name: string;
-  total_marks: number;
-  marks_obtained: number;
-  percentage: number;
-  grade: "S" | "A" | "B" | "C" | "D" | "F";
-  submitted_at: string;
-};
-
-type RankedRow = ResultRow & { rank: number };
+type Test = Awaited<ReturnType<typeof adminListTests>>[number];
+type Question = Awaited<ReturnType<typeof adminListQuestions>>[number];
+type Attempt = Awaited<ReturnType<typeof adminListAttempts>>[number];
 
 function AdminPage() {
-  const [authed, setAuthed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return sessionStorage.getItem(STORAGE_KEY) === "1";
-  });
-  const [pw, setPw] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pw === ADMIN_PASSWORD) {
-      sessionStorage.setItem(STORAGE_KEY, "1");
-      setAuthed(true);
-      setError(null);
-    } else {
-      setError("Incorrect password.");
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) {
+        navigate({ to: "/auth", replace: true });
+      } else {
+        setAuthed(true);
+      }
+      setReady(true);
+    });
+    const sub = supabase.auth.onAuthStateChange((_e, session) => {
+      if (!session) navigate({ to: "/auth", replace: true });
+    });
+    return () => { sub.data.subscription.unsubscribe(); };
+  }, [navigate]);
+
+  if (!ready) return null;
+  if (!authed) return null;
+  return <AdminDashboard />;
+}
+
+type Tab = "tests" | "questions" | "attempts" | "account";
+
+function AdminDashboard() {
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<Tab>("tests");
+  const [tests, setTests] = useState<Test[]>([]);
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const listTests = useServerFn(adminListTests);
+  const reload = useCallback(async () => {
+    try {
+      const rows = await listTests();
+      setTests(rows);
+      if (rows.length && !selectedTestId) setSelectedTestId(rows[0].id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load");
     }
-  };
+  }, [listTests, selectedTestId]);
 
-  if (!authed) {
-    return (
-      <div className="min-h-screen bg-background text-foreground">
-        <div className="mx-auto max-w-sm px-5 py-10 sm:px-8">
-          <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
-            ← Back
-          </Link>
-          <div className="mt-16 border border-border bg-card p-6 sm:p-8">
-            <p className="text-center font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理者</p>
-            <h1 className="mt-2 text-center text-2xl font-serif-jp">Admin Access</h1>
-            <span className="accent-line mx-auto mt-4" />
-            <form onSubmit={onSubmit} className="mt-8 space-y-4">
-              <label className="block">
-                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</span>
-                <input
-                  type="password"
-                  required
-                  autoFocus
-                  value={pw}
-                  onChange={(e) => setPw(e.target.value)}
-                  className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 outline-none focus:border-accent"
-                  autoComplete="current-password"
-                />
-              </label>
-              {error && <p className="text-xs text-destructive">{error}</p>}
-              <button
-                type="submit"
-                className="w-full bg-foreground py-3 text-sm font-medium uppercase tracking-[0.2em] text-background hover:bg-accent"
-              >
-                Enter
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => { void reload(); }, [reload]);
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8 sm:py-10">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-10">
         <div className="flex items-center justify-between gap-3">
-          <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">
-            ← Back
-          </Link>
-          <button
-            onClick={() => {
-              sessionStorage.removeItem(STORAGE_KEY);
-              setAuthed(false);
-              setPw("");
-            }}
-            className="text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-accent"
-          >
-            Log Out
-          </button>
+          <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">← Site</Link>
+          <button onClick={signOut} className="text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-accent">Sign Out</button>
         </div>
-        <Dashboard />
+        <header className="mt-6">
+          <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理</p>
+          <h1 className="mt-1 text-2xl sm:text-3xl font-serif-jp">Admin Panel</h1>
+          <span className="accent-line mt-3 block" />
+        </header>
+
+        <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
+          {(["tests", "questions", "attempts", "account"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-xs uppercase tracking-[0.2em] border-b-2 -mb-px ${tab === t ? "border-accent text-accent" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            >{t}</button>
+          ))}
+        </nav>
+
+        {err && <p className="mt-4 border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{err}</p>}
+
+        {tests.length > 0 && (tab === "questions" || tab === "attempts") && (
+          <div className="mt-6">
+            <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Test</label>
+            <select
+              value={selectedTestId ?? ""}
+              onChange={(e) => setSelectedTestId(e.target.value)}
+              className="ml-3 border border-border bg-card px-3 py-2 text-sm"
+            >
+              {tests.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div className="mt-6">
+          {tab === "tests" && <TestsTab tests={tests} onChange={reload} />}
+          {tab === "questions" && selectedTestId && <QuestionsTab key={selectedTestId} testId={selectedTestId} />}
+          {tab === "attempts" && selectedTestId && <AttemptsTab key={selectedTestId} testId={selectedTestId} test={tests.find(t => t.id === selectedTestId)} />}
+          {tab === "account" && <AccountTab />}
+        </div>
       </div>
     </div>
   );
 }
 
-function Dashboard() {
-  const [rows, setRows] = useState<ResultRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+// -------- Tests tab --------
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const { data, error } = await supabase
-      .from("results")
-      .select("*")
-      .order("submitted_at", { ascending: false })
-      .limit(1000);
-    if (error) {
-      setError(error.message);
-      setRows([]);
-    } else {
-      setRows((data ?? []) as ResultRow[]);
+function TestsTab({ tests, onChange }: { tests: Test[]; onChange: () => void }) {
+  const [editing, setEditing] = useState<Test | "new" | null>(null);
+  const del = useServerFn(adminDeleteTest);
+
+  return (
+    <section>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">All Tests</h2>
+        <button onClick={() => setEditing("new")} className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent">+ New Test</button>
+      </div>
+
+      <ul className="mt-4 space-y-2">
+        {tests.length === 0 && <li className="border border-border bg-card p-4 text-sm text-muted-foreground">No tests yet.</li>}
+        {tests.map((t) => (
+          <li key={t.id} className="border border-border bg-card p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="font-serif-jp text-base truncate">{t.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {Math.round(t.duration_seconds / 60)} min · {new Date(t.available_from).toLocaleString()} → {new Date(t.available_until).toLocaleString()}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setEditing(t)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">Edit</button>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Delete "${t.title}"? This removes all questions and attempts.`)) return;
+                    await del({ data: { id: t.id } });
+                    onChange();
+                  }}
+                  className="border border-destructive/40 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-destructive hover:bg-destructive/10"
+                >Delete</button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {editing && <TestEditor test={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChange(); }} />}
+    </section>
+  );
+}
+
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: () => void; onSaved: () => void }) {
+  const create = useServerFn(adminCreateTest);
+  const update = useServerFn(adminUpdateTest);
+  const now = new Date();
+  const oneHr = new Date(now.getTime() + 60 * 60 * 1000);
+  const [title, setTitle] = useState(test?.title ?? "");
+  const [description, setDescription] = useState(test?.description ?? "");
+  const [duration, setDuration] = useState(test ? Math.round(test.duration_seconds / 60) : 30);
+  const [from, setFrom] = useState(test ? toLocalInput(test.available_from) : toLocalInput(now.toISOString()));
+  const [until, setUntil] = useState(test ? toLocalInput(test.available_until) : toLocalInput(oneHr.toISOString()));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const payload = {
+        title, description: description || null,
+        duration_seconds: Math.max(30, Math.round(duration * 60)),
+        available_from: new Date(from).toISOString(),
+        available_until: new Date(until).toISOString(),
+      };
+      if (test) await update({ data: { id: test.id, ...payload } });
+      else await create({ data: payload });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
     }
-    setLoading(false);
-  }, []);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg border border-border bg-card p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-serif-jp text-xl">{test ? "Edit Test" : "New Test"}</h3>
+        <div className="mt-4 space-y-3">
+          <Input label="Title" value={title} onChange={setTitle} />
+          <label className="block">
+            <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Description</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+              className="mt-2 w-full border border-border bg-transparent px-2 py-2 text-sm outline-none focus:border-accent" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Duration (min)" type="number" value={String(duration)} onChange={(v) => setDuration(Number(v))} />
+            <div />
+            <Input label="Opens" type="datetime-local" value={from} onChange={setFrom} />
+            <Input label="Closes" type="datetime-local" value={until} onChange={setUntil} />
+          </div>
+        </div>
+        {err && <p className="mt-3 text-xs text-destructive">{err}</p>}
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onClose} className="border border-border px-4 py-2 text-xs uppercase tracking-[0.2em]">Cancel</button>
+          <button onClick={save} disabled={busy || !title} className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60">{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+  return (
+    <label className="block">
+      <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{label}</span>
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
+        className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent" />
+    </label>
+  );
+}
+
+// -------- Questions tab --------
+
+type DraftOption = { id: string; text: string };
+type DraftQuestion = { id?: string; position: number; prompt: string; options: DraftOption[]; correct_option_id: string; marks: number };
+
+function QuestionsTab({ testId }: { testId: string }) {
+  const list = useServerFn(adminListQuestions);
+  const save = useServerFn(adminSaveQuestions);
+  const [items, setItems] = useState<DraftQuestion[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    list({ data: { testId } }).then((rows: Question[]) =>
+      setItems(rows.map((r) => ({
+        id: r.id, position: r.position, prompt: r.prompt,
+        options: r.options as DraftOption[], correct_option_id: r.correct_option_id, marks: r.marks,
+      }))));
+  }, [list, testId]);
 
-  // Rank by percentage (desc), tie-break: earlier submission wins.
-  const ranked = useMemo<RankedRow[]>(() => {
-    const sorted = rows.slice().sort((a, b) => {
-      if (b.percentage !== a.percentage) return b.percentage - a.percentage;
-      return new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime();
-    });
-    // Dense ranking on percentage (ties share rank).
-    let lastPct: number | null = null;
-    let lastRank = 0;
-    return sorted.map((r, i) => {
-      const rank = lastPct !== null && r.percentage === lastPct ? lastRank : i + 1;
-      lastPct = r.percentage;
-      lastRank = rank;
-      return { ...r, rank };
+  if (!items) return <p className="text-sm text-muted-foreground">Loading…</p>;
+
+  const addQ = () => setItems([...items, {
+    position: items.length, prompt: "", marks: 1,
+    options: [{ id: "a", text: "" }, { id: "b", text: "" }, { id: "c", text: "" }, { id: "d", text: "" }],
+    correct_option_id: "a",
+  }]);
+
+  const upd = (i: number, patch: Partial<DraftQuestion>) => {
+    const next = items.slice();
+    next[i] = { ...next[i], ...patch };
+    setItems(next);
+  };
+  const del = (i: number) => setItems(items.filter((_, j) => j !== i).map((q, j) => ({ ...q, position: j })));
+
+  const onSave = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      await save({ data: { testId, questions: items.map((q, i) => ({ ...q, position: i })) } });
+      setMsg("Saved.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Save failed");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Questions ({items.length})</h2>
+        <div className="flex gap-2">
+          <button onClick={addQ} className="border border-border px-3 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">+ Add</button>
+          <button onClick={onSave} disabled={busy} className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60">{busy ? "Saving…" : "Save All"}</button>
+        </div>
+      </div>
+      {msg && <p className="mt-3 text-xs text-muted-foreground">{msg}</p>}
+
+      <ol className="mt-4 space-y-4">
+        {items.map((q, i) => (
+          <li key={i} className="border border-border bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Q{i + 1}</p>
+              <button onClick={() => del(i)} className="text-xs uppercase tracking-[0.2em] text-destructive hover:underline">Remove</button>
+            </div>
+            <textarea
+              value={q.prompt} onChange={(e) => upd(i, { prompt: e.target.value })}
+              placeholder="Question prompt" rows={2}
+              className="mt-2 w-full border border-border bg-transparent px-2 py-2 text-sm outline-none focus:border-accent"
+            />
+            <div className="mt-3 grid gap-2">
+              {q.options.map((o, oi) => (
+                <div key={o.id} className="flex items-center gap-2">
+                  <input
+                    type="radio" name={`correct-${i}`} checked={q.correct_option_id === o.id}
+                    onChange={() => upd(i, { correct_option_id: o.id })}
+                  />
+                  <span className="w-6 text-xs uppercase text-muted-foreground">{o.id})</span>
+                  <input
+                    value={o.text}
+                    onChange={(e) => {
+                      const opts = q.options.slice(); opts[oi] = { ...o, text: e.target.value };
+                      upd(i, { options: opts });
+                    }}
+                    placeholder="Option text"
+                    className="flex-1 border-b border-border bg-transparent px-1 py-1 text-sm outline-none focus:border-accent"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3">
+              <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                Marks
+                <input
+                  type="number" min={1} value={q.marks}
+                  onChange={(e) => upd(i, { marks: Math.max(1, Number(e.target.value) || 1) })}
+                  className="ml-3 w-20 border-b border-border bg-transparent px-1 py-1 text-sm outline-none focus:border-accent"
+                />
+              </label>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+// -------- Attempts tab --------
+
+function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
+  const list = useServerFn(adminListAttempts);
+  const [rows, setRows] = useState<Attempt[] | null>(null);
+
+  useEffect(() => { list({ data: { testId } }).then(setRows); }, [list, testId]);
+
+  const ranked = useMemo(() => {
+    if (!rows) return [];
+    const submitted = rows.filter((r) => r.submitted_at);
+    let lp: number | null = null, lr = 0;
+    return submitted.map((r, i) => {
+      const pct = Number(r.percentage ?? 0);
+      const rank = lp !== null && pct === lp ? lr : i + 1;
+      lp = pct; lr = rank;
+      return { ...r, rank, percentage: pct };
     });
   }, [rows]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return ranked;
-    return ranked.filter((r) => r.name.toLowerCase().includes(q) || r.grade.toLowerCase() === q);
-  }, [ranked, query]);
-
-  const stats = useMemo(() => {
-    if (ranked.length === 0) return null;
-    const avg = ranked.reduce((s, r) => s + Number(r.percentage), 0) / ranked.length;
-    const top = ranked[0];
-    const passed = ranked.filter((r) => r.grade !== "F").length;
-    return { avg, top, passed, total: ranked.length };
-  }, [ranked]);
-
   const exportXlsx = () => {
-    const sheetData = filtered.map((r) => ({
-      Rank: r.rank,
-      Name: r.name,
-      "Marks Obtained": r.marks_obtained,
-      "Total Marks": r.total_marks,
-      "Percentage (%)": Number(Number(r.percentage).toFixed(2)),
-      Grade: r.grade,
-      "Submitted At": new Date(r.submitted_at).toLocaleString(),
+    const sheet = ranked.map((r) => ({
+      Rank: r.rank, Name: r.student_name, Score: r.score, Total: r.total,
+      "Percentage (%)": Number((r.percentage ?? 0).toFixed(2)), Grade: r.grade,
+      "Submitted At": r.submitted_at ? new Date(r.submitted_at).toLocaleString() : "",
     }));
-    const ws = XLSX.utils.json_to_sheet(sheetData);
-    ws["!cols"] = [
-      { wch: 6 }, { wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 22 },
-    ];
-    // Freeze header row
-    ws["!freeze"] = { xSplit: 0, ySplit: 1 } as never;
+    const ws = XLSX.utils.json_to_sheet(sheet);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leaderboard");
-    XLSX.writeFile(wb, `leaderboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Attempts");
+    XLSX.writeFile(wb, `attempts-${(test?.title ?? "test").replace(/\s+/g, "_")}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  const exportCsv = () => {
-    const header = ["Rank", "Name", "Marks Obtained", "Total Marks", "Percentage", "Grade", "Submitted At"];
-    const lines = [header.join(",")];
-    filtered.forEach((r) => {
-      lines.push([
-        String(r.rank),
-        csvCell(r.name),
-        String(r.marks_obtained),
-        String(r.total_marks),
-        Number(r.percentage).toFixed(2),
-        r.grade,
-        new Date(r.submitted_at).toISOString(),
-      ].join(","));
-    });
-    const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `leaderboard-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  if (!rows) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   return (
-    <div className="mt-6 sm:mt-8">
-      <header className="mb-6 sm:mb-8">
-        <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">順位表</p>
-        <h1 className="mt-2 text-xl sm:text-3xl font-serif-jp">Leaderboard</h1>
-        <span className="accent-line mt-4 block" />
-      </header>
-
-      {/* Stats */}
-      {stats && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Submissions" value={String(stats.total)} />
-          <StatCard label="Passed" value={`${stats.passed} / ${stats.total}`} />
-          <StatCard label="Average" value={`${stats.avg.toFixed(1)}%`} />
-          <StatCard label="Top Score" value={`${Number(stats.top.percentage).toFixed(1)}%`} sub={stats.top.name} />
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name or grade (S/A/B/C/F)…"
-          className="w-full sm:max-w-xs border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
-        />
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex-1 sm:flex-none border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent disabled:opacity-60"
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-          <button
-            onClick={exportCsv}
-            disabled={filtered.length === 0}
-            className="flex-1 sm:flex-none border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent disabled:opacity-60"
-          >
-            CSV
-          </button>
-          <button
-            onClick={exportXlsx}
-            disabled={filtered.length === 0}
-            className="flex-1 sm:flex-none bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60"
-          >
-            Export XLSX
-          </button>
-        </div>
+    <section>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Attempts ({ranked.length})</h2>
+        <button onClick={exportXlsx} disabled={ranked.length === 0} className="bg-foreground px-4 py-2 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60">Export XLSX</button>
       </div>
 
-      {error && (
-        <div className="mb-4 border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {/* Desktop table */}
-      <div className="hidden md:block overflow-x-auto border border-border">
+      <div className="mt-4 overflow-x-auto border border-border">
         <table className="w-full text-sm">
           <thead className="bg-secondary text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-normal w-16">Rank</th>
-              <th className="px-4 py-3 font-normal">Name</th>
-              <th className="px-4 py-3 font-normal">Score</th>
-              <th className="px-4 py-3 font-normal">Percentage</th>
-              <th className="px-4 py-3 font-normal">Grade</th>
-              <th className="px-4 py-3 font-normal">Date</th>
+              <th className="px-3 py-2 font-normal">Rank</th>
+              <th className="px-3 py-2 font-normal">Name</th>
+              <th className="px-3 py-2 font-normal">Score</th>
+              <th className="px-3 py-2 font-normal">%</th>
+              <th className="px-3 py-2 font-normal">Grade</th>
+              <th className="px-3 py-2 font-normal">Submitted</th>
             </tr>
           </thead>
           <tbody>
-            {loading && filtered.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Loading…</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">No submissions.</td></tr>
-            ) : (
-              filtered.map((r) => (
-                <tr key={r.id} className={`border-t border-border ${rowHighlight(r.rank)}`}>
-                  <td className="px-4 py-3"><RankBadge rank={r.rank} /></td>
-                  <td className="px-4 py-3 text-foreground font-medium">{r.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.marks_obtained} / {r.total_marks}</td>
-                  <td className="px-4 py-3">{Number(r.percentage).toFixed(2)}%</td>
-                  <td className={`px-4 py-3 font-serif-jp text-lg ${gradeColorClass(r.grade)}`}>{r.grade}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{new Date(r.submitted_at).toLocaleString()}</td>
-                </tr>
-              ))
-            )}
+            {ranked.length === 0 ? (
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No submissions yet.</td></tr>
+            ) : ranked.map((r) => (
+              <tr key={r.id} className="border-t border-border">
+                <td className="px-3 py-2">{r.rank}</td>
+                <td className="px-3 py-2">{r.student_name}</td>
+                <td className="px-3 py-2 text-muted-foreground">{r.score} / {r.total}</td>
+                <td className="px-3 py-2">{r.percentage.toFixed(1)}%</td>
+                <td className={`px-3 py-2 font-serif-jp text-lg ${gradeColorClass((r.grade ?? "F") as "S" | "A" | "B" | "C" | "D" | "F")}`}>{r.grade}</td>
+                <td className="px-3 py-2 text-muted-foreground">{r.submitted_at ? new Date(r.submitted_at).toLocaleString() : "—"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
-
-      {/* Mobile cards */}
-      <div className="md:hidden space-y-3">
-        {loading && filtered.length === 0 ? (
-          <p className="border border-border p-6 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : filtered.length === 0 ? (
-          <p className="border border-border p-6 text-center text-sm text-muted-foreground">No submissions.</p>
-        ) : (
-          filtered.map((r) => (
-            <div key={r.id} className={`border border-border p-4 ${rowHighlight(r.rank)}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <RankBadge rank={r.rank} />
-                  <p className="text-sm font-medium text-foreground break-words">{r.name}</p>
-                </div>
-                <div className={`font-serif-jp text-3xl leading-none ${gradeColorClass(r.grade)}`}>{r.grade}</div>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <p className="text-muted-foreground uppercase tracking-[0.15em]">Score</p>
-                  <p className="mt-1 text-foreground">{r.marks_obtained} / {r.total_marks}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground uppercase tracking-[0.15em]">Percentage</p>
-                  <p className="mt-1 text-foreground">{Number(r.percentage).toFixed(2)}%</p>
-                </div>
-              </div>
-              <p className="mt-3 text-[11px] text-muted-foreground">
-                {new Date(r.submitted_at).toLocaleString()}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
+    </section>
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+// -------- Account tab --------
+
+function AccountTab() {
+  const change = useServerFn(adminChangePassword);
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(null); setErr(null);
+    if (pw.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (pw !== pw2) { setErr("Passwords do not match."); return; }
+    setBusy(true);
+    try {
+      await change({ data: { newPassword: pw } });
+      setMsg("Password updated.");
+      setPw(""); setPw2("");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally { setBusy(false); }
+  };
+
   return (
-    <div className="border border-border p-4">
-      <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-xl font-serif-jp text-foreground">{value}</p>
-      {sub && <p className="mt-1 text-xs text-muted-foreground truncate">{sub}</p>}
-    </div>
+    <section className="max-w-md">
+      <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Change Admin Password</h2>
+      <form onSubmit={onSubmit} className="mt-4 space-y-4 border border-border bg-card p-5">
+        <Input label="New password" type="password" value={pw} onChange={setPw} />
+        <Input label="Confirm password" type="password" value={pw2} onChange={setPw2} />
+        {err && <p className="text-xs text-destructive">{err}</p>}
+        {msg && <p className="text-xs text-accent">{msg}</p>}
+        <button type="submit" disabled={busy} className="w-full bg-foreground py-3 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60">
+          {busy ? "Updating…" : "Update Password"}
+        </button>
+      </form>
+    </section>
   );
-}
-
-function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1) {
-    return <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-yellow-500/15 text-yellow-500 text-base">🥇</span>;
-  }
-  if (rank === 2) {
-    return <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-zinc-400/15 text-zinc-300 text-base">🥈</span>;
-  }
-  if (rank === 3) {
-    return <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-700/15 text-amber-600 text-base">🥉</span>;
-  }
-  return (
-    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border text-xs text-muted-foreground">
-      {rank}
-    </span>
-  );
-}
-
-function rowHighlight(rank: number) {
-  if (rank === 1) return "bg-yellow-500/5";
-  if (rank === 2) return "bg-zinc-400/5";
-  if (rank === 3) return "bg-amber-700/5";
-  return "";
-}
-
-function csvCell(s: string) {
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
 }
