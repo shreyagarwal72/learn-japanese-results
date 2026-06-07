@@ -9,7 +9,16 @@ export const Route = createFileRoute("/test/$testId/attempt/$attemptId")({
   component: LiveTest,
 });
 
-type AttemptData = Awaited<ReturnType<ReturnType<typeof useServerFn<typeof startAttempt>>>>;
+type AttemptData = {
+  attemptId: string;
+  startedAt: string;
+  deadline: string;
+  durationSeconds: number;
+  questions: PublicQuestion[];
+  total: number;
+  title: string;
+};
+
 
 function LiveTest() {
   const { testId, attemptId } = Route.useParams();
