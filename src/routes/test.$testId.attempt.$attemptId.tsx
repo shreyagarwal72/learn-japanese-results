@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { startAttempt, submitAttempt, type PublicQuestion } from "@/lib/tests.functions";
+import { submitAttempt, type PublicQuestion } from "@/lib/tests.functions";
 import { SITE_CONFIG, gradeFor, gradeColorClass } from "@/lib/config";
+
 
 export const Route = createFileRoute("/test/$testId/attempt/$attemptId")({
   head: () => ({ meta: [{ title: "Live Test — Japanese Learning For All" }, { name: "robots", content: "noindex" }] }),
