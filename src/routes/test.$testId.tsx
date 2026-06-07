@@ -29,6 +29,7 @@ function PreTest() {
     setBusy(true);
     try {
       const r = await beginFn({ data: { testId, studentName: name.trim() } });
+      sessionStorage.setItem(`attempt:${r.attemptId}`, JSON.stringify(r));
       navigate({ to: "/test/$testId/attempt/$attemptId", params: { testId, attemptId: r.attemptId } });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not start test");
@@ -36,6 +37,7 @@ function PreTest() {
       setBusy(false);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
