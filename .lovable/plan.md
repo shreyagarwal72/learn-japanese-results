@@ -1,107 +1,74 @@
-# Japanese Learning For All — Build Plan
+## Goal
 
-## Stack
+Replace the self-reported marks flow with live, auto-graded MCQ tests. Each test has a fixed per-attempt duration; once a student submits (or time runs out), their score is recorded. Each test's leaderboard unlocks at 9 AM the day after the test's end date. Also rotate the admin password.
 
-React (TanStack Start template already in place) + Tailwind v4 + Lovable Cloud (Supabase). No extra deps needed beyond what's installed.
+## Database changes
 
-## Design system (src/styles.css)
+New tables (in `public`, with grants + RLS):
 
-- Background `#ffffff`, foreground near-black `#111111`, accent red `#C0392B`, muted grey for secondary text.
-- Fonts loaded via Google Fonts `<link>` in `__root.tsx` head: "Noto Serif JP" (headings, `font-serif-jp`), "DM Sans" (body, default).
-- Reusable decorative element: a thin 40px red horizontal line (`<span class="block h-px w-10 bg-[--accent]" />`) placed under headings.
-- Generous whitespace, no gradients, no shadows beyond a soft 1px border on the card.
+- `tests` — `id`, `title`, `description`, `duration_seconds`, `available_from`, `available_until`, `created_at`
+  - Anon/authenticated SELECT only when `now() between available_from and available_until` (for taking) plus a separate "list active/upcoming" policy. Admin (has_role 'admin') full manage.
+- `questions` — `id`, `test_id` (FK), `position`, `prompt`, `options` (jsonb array of {id,text}), `correct_option_id`, `marks` (default 1)
+  - Students get a sanitized view (without `correct_option_id`) via a server function — don't expose the answer column directly. Admin manages.
+- `attempts` — `id`, `test_id`, `student_name`, `started_at`, `submitted_at`, `score`, `total`, `percentage`, `grade`, `answers` (jsonb)
+  - Anyone can INSERT (start) and UPDATE their own attempt by id (returned token). Public SELECT only via a server function that enforces the 9 AM-next-day unlock rule.
+
+Keep the existing `results` table untouched for now (legacy); the new flow writes to `attempts`. Leaderboard reads from `attempts`.
+
+Grade boundaries continue to use raw marks per `src/lib/config.ts`.
+
+## Server functions (`createServerFn`)
+
+In `src/lib/tests.functions.ts`:
+
+- `listAvailableTests()` — returns currently-open tests (no answers).
+- `getTestForAttempt({ testId })` — returns test + questions stripped of `correct_option_id`. Validates `available_from/until`.
+- `startAttempt({ testId, studentName })` — inserts an `attempts` row, returns `{ attemptId, serverStartedAt, durationSeconds, deadline }`. Deadline = min(started_at + duration, available_until).
+- `submitAttempt({ attemptId, answers })` — server recomputes score against `correct_option_id`, enforces deadline (reject/auto-zero late answers past grace), writes score/grade, returns result summary.
+- `getLeaderboard({ testId })` — returns rows only if `now() >= (available_until::date + 1 day) at 09:00 local`; otherwise returns `{ locked: true, unlocksAt }`.
+
+Admin-only (uses `requireSupabaseAuth` + `has_role admin`) in `src/lib/admin-tests.functions.ts`:
+
+- `adminListTests`, `adminCreateTest`, `adminUpdateTest`, `adminDeleteTest`
+- `adminUpsertQuestions(testId, questions[])`
+- `adminListAttempts(testId)` (full leaderboard regardless of unlock)
 
 ## Routes
 
-- `/` — `src/routes/index.tsx` — submission page
-- `/admin` — `src/routes/admin.tsx` — password gate + dashboard
+- `/` (home) — lists currently-available tests; "Start test" button. Removes the manual marks form.
+- `/test/$testId` — pre-test screen: enter name, shows duration + rules, "Begin".
+- `/test/$testId/attempt/$attemptId` — live test UI:
+  - Server-authoritative countdown derived from `deadline` (client polls/uses serverStartedAt; no trust in local clock).
+  - One question per screen or scrollable list (single scrollable list, mobile-first).
+  - Auto-submit when timer hits 0.
+  - Result screen after submit with grade + Japanese message (reuses existing grade UI).
+- `/leaderboard` — pick a test → shows locked countdown to next-day 9 AM, or full ranked list when unlocked. Keeps current medal/rank styling and CSV/XLSX export.
+- `/admin` — gated by Supabase Auth + `admin` role:
+  - Tests list (create/edit/delete).
+  - Question editor (add/edit MCQs with options + mark correct).
+  - Per-test attempts viewer with existing exports.
 
-No navbar. Small grey "Admin" link at the bottom of `/`. "← Back" link top-left on `/admin`.
+## Admin password change
 
-## Database (Lovable Cloud / Supabase)
+Admin auth already uses Supabase Auth (per the auth scaffold). To rotate:
 
-Migration creates `public.results`:
+1. Update the `ADMIN_PASSWORD` secret via the secrets tool (used as a seed/fallback only — display only, not in client bundle).
+2. Reset the admin user's Supabase Auth password via a one-off SQL `UPDATE auth.users` is not allowed; instead use a server function calling `supabaseAdmin.auth.admin.updateUserById` after the user confirms the new password in the secrets prompt.
 
-- `id` uuid pk default `gen_random_uuid()`
-- `name` text not null
-- `total_marks` int not null
-- `marks_obtained` int not null
-- `percentage` numeric(5,2) not null
-- `grade` text not null
-- `submitted_at` timestamptz not null default `now()`
+I'll ask you for the new password through the secret prompt, then run a server-side update for the admin account.
 
-Grants + RLS:
+## Technical notes
 
-- `GRANT SELECT, INSERT ON public.results TO anon, authenticated;`
-- RLS enabled. Policies: anyone can INSERT; anyone can SELECT (the admin gate is the password — acceptable per the spec, which says "simple hardcoded password check on the frontend").
+- Timer integrity: deadline is computed and stored server-side at `startAttempt`; client just renders countdown to `deadline`. `submitAttempt` rejects answers received after deadline + 5 s grace and auto-zeros missing answers.
+- Anti-cheat (light): one attempt per (test_id, student_name lowercased) enforced server-side; tab visibility changes logged in `attempts.answers.meta` (no auto-fail).
+- Leaderboard unlock uses UTC date math with a configurable timezone constant (default `Asia/Tokyo`) so "next day 9 AM" is deterministic.
+- All MCQ correctness checks happen exclusively in server functions; `correct_option_id` is never sent to the browser.
+- RLS denies direct client SELECT of `questions.correct_option_id` and direct SELECT of `attempts` after unlock relies on a `SECURITY DEFINER` view/function — clients never query `attempts` directly.
 
-Client: use existing `@/integrations/supabase/client` (browser client, anon key). No server functions needed.
+## Out of scope (confirm if you want them)
 
-## Home page (`/`)
-
-- Centered card (max-w-md, 1px border, generous padding).
-- Heading "Japanese Learning For All" in Noto Serif JP + red accent line + subheading "Submit Your Test Results".
-- If GitHub config has an `activeTest` with `name`/`totalMarks`, prefill and lock the Total Marks field and show the test name above the form. Otherwise Total Marks is editable.
-- Fields: Student Name, Total Marks, Marks Obtained. Inline validation (zod):
-  - All fields required (non-empty, trimmed name).
-  - Total Marks > 0.
-  - 0 ≤ Marks Obtained ≤ Total Marks.
-- On submit: compute percentage (2 decimals) and grade via threshold table from config (with built-in defaults: S 90+, A 75+, B 60+, C 40+, F <40). Insert into `results`. Show success toast.
-- Result panel below form: percentage, grade letter, Japanese label, and motivational message (from config, defaults provided in spec). Grade letter color-coded (S dark green, A green, B blue, C orange, F red) using semantic tokens.
-
-## Admin page (`/admin`)
-
-- Password screen (single input). On submit, compare to `"jlfa2025"`; on match, set local state to show dashboard. No persistence.
-- Dashboard:
-  - Heading "Admin Panel — All Submissions" + red accent line.
-  - Total count + Refresh button + Export CSV button.
-  - Table columns: #, Name, Marks Obtained, Total Marks, Percentage, Grade (color-coded badge), Date (formatted).
-  - Data fetched via `supabase.from('results').select('*').order('submitted_at', { ascending: false })`.
-  - CSV export builds a Blob from currently loaded rows and triggers download (`results-YYYY-MM-DD.csv`).
-- Mobile: table wrapped in horizontal scroll container; padding tightened.
-
-## GitHub-hosted JSON config
-
-- One source of truth for both test info and site content.
-- Fetched on every page load (no cache) from a raw GitHub URL.
-- Default URL constant: `https://raw.githubusercontent.com/shreyagarwal72/jlfa-config/main/config.json` (overridable via `VITE_CONFIG_URL` env var if you want).
-- Shape:
-  ```json
-  {
-    "activeTest": { "name": "Test 1 — Hiragana", "totalMarks": 100 },
-    "site": {
-      "title": "Japanese Learning For All",
-      "subtitle": "Submit Your Test Results"
-    },
-    "grades": [
-      { "min": 90, "letter": "S", "jp": "優秀", "en": "Excellent", "message": "素晴らしい！継続してください！" },
-      { "min": 75, "letter": "A", "jp": "良い", "en": "Good", "message": "よくできました！" },
-      { "min": 60, "letter": "B", "jp": "普通", "en": "Average", "message": "いい調子です！" },
-      { "min": 40, "letter": "C", "jp": "もう少し", "en": "Needs Improvement", "message": "もっと頑張れます！" },
-      { "min": 0,  "letter": "F", "jp": "不合格", "en": "Fail", "message": "あきらめないで！" }
-    ]
-  }
-  ```
-- A `useConfig()` hook uses TanStack Query (`staleTime: 0`) to fetch on each mount; falls back to hard-coded defaults if the fetch fails so the site never breaks.
-- README note included with the exact repo/file path the user needs to create on GitHub for live updates.
-
-## Mobile responsiveness
-
-- Card switches to full-width with side padding under `sm`.
-- Admin table wrapped in `overflow-x-auto`.
-- Buttons stack on small screens.
-
-## Files to create/modify
-
-- `src/styles.css` — tokens + Noto Serif JP/DM Sans utility classes
-- `src/routes/__root.tsx` — Google Fonts link tags
-- `src/routes/index.tsx` — submission page
-- `src/routes/admin.tsx` — password gate + dashboard
-- `src/lib/config.ts` — GitHub JSON fetcher + defaults + `useConfig` hook
-- `src/lib/grading.ts` — percentage/grade helpers
-- Migration creating `public.results` table with grants + RLS
-
-## Out of scope
-
-- No server functions, no auth, no edit/delete in admin.
-- Password gate is intentionally client-side per the spec.
+- Student accounts / one-attempt-per-user enforcement beyond name match.
+- Question images, multi-correct answers, negative marking.
+- Per-question time limits.
+- No i don't want any of it in out password.
+- Also add an option in admin panel to set the full test, also store admin password in backend.

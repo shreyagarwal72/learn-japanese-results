@@ -14,6 +14,97 @@ export type Database = {
   }
   public: {
     Tables: {
+      attempts: {
+        Row: {
+          answers: Json | null
+          deadline: string
+          grade: string | null
+          id: string
+          percentage: number | null
+          score: number | null
+          started_at: string
+          student_name: string
+          submitted_at: string | null
+          test_id: string
+          total: number | null
+        }
+        Insert: {
+          answers?: Json | null
+          deadline: string
+          grade?: string | null
+          id?: string
+          percentage?: number | null
+          score?: number | null
+          started_at?: string
+          student_name: string
+          submitted_at?: string | null
+          test_id: string
+          total?: number | null
+        }
+        Update: {
+          answers?: Json | null
+          deadline?: string
+          grade?: string | null
+          id?: string
+          percentage?: number | null
+          score?: number | null
+          started_at?: string
+          student_name?: string
+          submitted_at?: string | null
+          test_id?: string
+          total?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attempts_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      questions: {
+        Row: {
+          correct_option_id: string
+          created_at: string
+          id: string
+          marks: number
+          options: Json
+          position: number
+          prompt: string
+          test_id: string
+        }
+        Insert: {
+          correct_option_id: string
+          created_at?: string
+          id?: string
+          marks?: number
+          options: Json
+          position?: number
+          prompt: string
+          test_id: string
+        }
+        Update: {
+          correct_option_id?: string
+          created_at?: string
+          id?: string
+          marks?: number
+          options?: Json
+          position?: number
+          prompt?: string
+          test_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       results: {
         Row: {
           grade: string
@@ -41,6 +132,39 @@ export type Database = {
           percentage?: number
           submitted_at?: string
           total_marks?: number
+        }
+        Relationships: []
+      }
+      tests: {
+        Row: {
+          available_from: string
+          available_until: string
+          created_at: string
+          description: string | null
+          duration_seconds: number
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          available_from?: string
+          available_until: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          available_from?: string
+          available_until?: string
+          created_at?: string
+          description?: string | null
+          duration_seconds?: number
+          id?: string
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }
