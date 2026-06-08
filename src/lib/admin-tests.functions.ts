@@ -35,16 +35,17 @@ export const adminListTests = createServerFn({ method: "POST" })
     return rows ?? [];
   });
 
-const testFields = z.object({
+const testFieldsBase = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).optional().nullable(),
   duration_seconds: z.number().int().min(30).max(60 * 60 * 6),
   available_from: z.string().datetime({ offset: true }),
   available_until: z.string().datetime({ offset: true }),
-}).refine(
-  (v) => new Date(v.available_until).getTime() > new Date(v.available_from).getTime(),
-  { message: "available_until must be after available_from", path: ["available_until"] },
-);
+});
+const windowRefine = (v: { available_from: string; available_until: string }) =>
+  new Date(v.available_until).getTime() > new Date(v.available_from).getTime();
+const windowMsg = { message: "available_until must be after available_from", path: ["available_until"] as const };
+const testFields = testFieldsBase.refine(windowRefine, windowMsg);
 
 export const adminCreateTest = createServerFn({ method: "POST" })
   .inputValidator((d: z.input<typeof testFields> & { password: string }) =>
