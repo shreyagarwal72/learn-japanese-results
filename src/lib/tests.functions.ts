@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { SITE_CONFIG, gradeFor } from "@/lib/config";
 
 // "Next day 9 AM" in IST (UTC+5:30). Adjust offset if you want a different TZ.
