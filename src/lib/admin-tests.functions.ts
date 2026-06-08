@@ -44,7 +44,7 @@ const testFieldsBase = z.object({
 });
 const windowRefine = (v: { available_from: string; available_until: string }) =>
   new Date(v.available_until).getTime() > new Date(v.available_from).getTime();
-const windowMsg = { message: "available_until must be after available_from", path: ["available_until"] as const };
+const windowMsg = { message: "available_until must be after available_from", path: ["available_until"] };
 const testFields = testFieldsBase.refine(windowRefine, windowMsg);
 
 export const adminCreateTest = createServerFn({ method: "POST" })
