@@ -1,10 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 function assertPassword(password: string) {
   const expected = process.env.ADMIN_PASSWORD;
   if (!expected) throw new Error("Admin password not configured");
-  if (password !== expected) throw new Error("Invalid admin password");
+  const a = createHash("sha256").update(password).digest();
+  const b = createHash("sha256").update(expected).digest();
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    throw new Error("Invalid admin password");
+  }
 }
 
 const withPw = <T extends z.ZodTypeAny>(schema: T) =>
@@ -34,9 +39,12 @@ const testFields = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).optional().nullable(),
   duration_seconds: z.number().int().min(30).max(60 * 60 * 6),
-  available_from: z.string(),
-  available_until: z.string(),
-});
+  available_from: z.string().datetime({ offset: true }),
+  available_until: z.string().datetime({ offset: true }),
+}).refine(
+  (v) => new Date(v.available_until).getTime() > new Date(v.available_from).getTime(),
+  { message: "available_until must be after available_from", path: ["available_until"] },
+);
 
 export const adminCreateTest = createServerFn({ method: "POST" })
   .inputValidator((d: z.input<typeof testFields> & { password: string }) =>
