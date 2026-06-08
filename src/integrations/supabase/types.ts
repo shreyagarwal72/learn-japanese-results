@@ -105,36 +105,6 @@ export type Database = {
           },
         ]
       }
-      results: {
-        Row: {
-          grade: string
-          id: string
-          marks_obtained: number
-          name: string
-          percentage: number
-          submitted_at: string
-          total_marks: number
-        }
-        Insert: {
-          grade: string
-          id?: string
-          marks_obtained: number
-          name: string
-          percentage: number
-          submitted_at?: string
-          total_marks: number
-        }
-        Update: {
-          grade?: string
-          id?: string
-          marks_obtained?: number
-          name?: string
-          percentage?: number
-          submitted_at?: string
-          total_marks?: number
-        }
-        Relationships: []
-      }
       tests: {
         Row: {
           available_from: string
