@@ -12,6 +12,7 @@ export const Route = createFileRoute("/test/$testId/attempt/$attemptId")({
 
 type AttemptData = {
   attemptId: string;
+  attemptSecret: string;
   startedAt: string;
   deadline: string;
   durationSeconds: number;
