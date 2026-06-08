@@ -1,16 +1,36 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-async function assertAdmin(userId: string) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin
-    .from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden: admin role required");
+function assertPassword(password: string) {
+  const expected = process.env.ADMIN_PASSWORD;
+  if (!expected) throw new Error("Admin password not configured");
+  if (password !== expected) throw new Error("Invalid admin password");
 }
 
-const testInput = z.object({
+const withPw = <T extends z.ZodTypeAny>(schema: T) =>
+  z.object({ password: z.string().min(1) }).and(schema);
+
+export const adminVerifyPassword = createServerFn({ method: "POST" })
+  .inputValidator((d: { password: string }) => z.object({ password: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
+    return { ok: true };
+  });
+
+export const adminListTests = createServerFn({ method: "POST" })
+  .inputValidator((d: { password: string }) => z.object({ password: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows, error } = await supabaseAdmin
+      .from("tests")
+      .select("id,title,description,duration_seconds,available_from,available_until,created_at")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+const testFields = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).optional().nullable(),
   duration_seconds: z.number().int().min(30).max(60 * 60 * 6),
@@ -18,40 +38,28 @@ const testInput = z.object({
   available_until: z.string(),
 });
 
-export const adminListTests = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    await assertAdmin(context.userId);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from("tests")
-      .select("id,title,description,duration_seconds,available_from,available_until,created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
-
 export const adminCreateTest = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.input<typeof testInput>) => testInput.parse(d))
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+  .inputValidator((d: z.input<typeof testFields> & { password: string }) =>
+    withPw(testFields).parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
+    const { password: _p, ...payload } = data;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: row, error } = await supabaseAdmin
-      .from("tests").insert(data).select("*").single();
+      .from("tests").insert(payload).select("*").single();
     if (error) throw new Error(error.message);
     return row;
   });
 
 export const adminUpdateTest = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.input<typeof testInput> & { id: string }) =>
-    testInput.extend({ id: z.string().uuid() }).parse(d),
+  .inputValidator((d: z.input<typeof testFields> & { id: string; password: string }) =>
+    withPw(testFields.extend({ id: z.string().uuid() })).parse(d),
   )
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
+    const { password: _p, id, ...rest } = data;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { id, ...rest } = data;
     const { data: row, error } = await supabaseAdmin
       .from("tests").update(rest).eq("id", id).select("*").single();
     if (error) throw new Error(error.message);
@@ -59,10 +67,11 @@ export const adminUpdateTest = createServerFn({ method: "POST" })
   });
 
 export const adminDeleteTest = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+  .inputValidator((d: { id: string; password: string }) =>
+    z.object({ id: z.string().uuid(), password: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("tests").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -79,11 +88,12 @@ const questionSchema = z.object({
   marks: z.number().int().min(1).max(100),
 });
 
-export const adminListQuestions = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { testId: string }) => z.object({ testId: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+export const adminListQuestions = createServerFn({ method: "POST" })
+  .inputValidator((d: { testId: string; password: string }) =>
+    z.object({ testId: z.string().uuid(), password: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows, error } = await supabaseAdmin
       .from("questions").select("*").eq("test_id", data.testId).order("position");
@@ -92,20 +102,21 @@ export const adminListQuestions = createServerFn({ method: "GET" })
   });
 
 export const adminSaveQuestions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { testId: string; questions: z.input<typeof questionSchema>[] }) =>
-    z.object({ testId: z.string().uuid(), questions: z.array(questionSchema) }).parse(d),
+  .inputValidator((d: { testId: string; password: string; questions: z.input<typeof questionSchema>[] }) =>
+    z.object({
+      testId: z.string().uuid(),
+      password: z.string().min(1),
+      questions: z.array(questionSchema),
+    }).parse(d),
   )
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // validate each correct_option_id exists in options
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
     for (const q of data.questions) {
       if (!q.options.some((o) => o.id === q.correct_option_id)) {
         throw new Error(`Question "${q.prompt.slice(0, 40)}…" has invalid correct option`);
       }
     }
-    // replace strategy: delete all, then insert
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error: delErr } = await supabaseAdmin
       .from("questions").delete().eq("test_id", data.testId);
     if (delErr) throw new Error(delErr.message);
@@ -125,11 +136,12 @@ export const adminSaveQuestions = createServerFn({ method: "POST" })
     return { ok: true, count: payload.length };
   });
 
-export const adminListAttempts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { testId: string }) => z.object({ testId: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+export const adminListAttempts = createServerFn({ method: "POST" })
+  .inputValidator((d: { testId: string; password: string }) =>
+    z.object({ testId: z.string().uuid(), password: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertPassword(data.password);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows, error } = await supabaseAdmin
       .from("attempts")
@@ -139,19 +151,4 @@ export const adminListAttempts = createServerFn({ method: "GET" })
       .order("submitted_at", { ascending: true });
     if (error) throw new Error(error.message);
     return rows ?? [];
-  });
-
-export const adminChangePassword = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { newPassword: string }) =>
-    z.object({ newPassword: z.string().min(8).max(128) }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(context.userId, {
-      password: data.newPassword,
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true };
   });
