@@ -12,6 +12,7 @@ export const Route = createFileRoute("/test/$testId/attempt/$attemptId")({
 
 type AttemptData = {
   attemptId: string;
+  attemptSecret: string;
   startedAt: string;
   deadline: string;
   durationSeconds: number;
@@ -43,7 +44,7 @@ function LiveTest() {
   }, [data, navigate, testId]);
 
   if (!data) return null;
-  return <TestRunner storageKey={storageKey} data={data} attemptId={attemptId} onFinish={() => sessionStorage.removeItem(storageKey)} submitFn={submitFn} />;
+  return <TestRunner storageKey={storageKey} data={data} attemptId={attemptId} attemptSecret={data.attemptSecret} onFinish={() => sessionStorage.removeItem(storageKey)} submitFn={submitFn} />;
 }
 
 // Stash data when /test/$testId starts an attempt — but routes don't share state.
@@ -55,10 +56,11 @@ function LiveTest() {
 type Result = { score: number; total: number; percentage: number; grade: string; late: boolean };
 
 function TestRunner({
-  data, attemptId, storageKey, onFinish, submitFn,
+  data, attemptId, attemptSecret, storageKey, onFinish, submitFn,
 }: {
   data: { questions: PublicQuestion[]; deadline: string; title: string; total: number };
   attemptId: string;
+  attemptSecret: string;
   storageKey: string;
   onFinish: () => void;
   submitFn: ReturnType<typeof useServerFn<typeof submitAttempt>>;
@@ -84,7 +86,7 @@ function TestRunner({
     setSubmitting(true);
     setErr(null);
     try {
-      const r = await submitFn({ data: { attemptId, answers } });
+      const r = await submitFn({ data: { attemptId, attemptSecret, answers } });
       setResult(r);
       onFinish();
     } catch (e) {
