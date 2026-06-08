@@ -56,10 +56,11 @@ function LiveTest() {
 type Result = { score: number; total: number; percentage: number; grade: string; late: boolean };
 
 function TestRunner({
-  data, attemptId, storageKey, onFinish, submitFn,
+  data, attemptId, attemptSecret, storageKey, onFinish, submitFn,
 }: {
   data: { questions: PublicQuestion[]; deadline: string; title: string; total: number };
   attemptId: string;
+  attemptSecret: string;
   storageKey: string;
   onFinish: () => void;
   submitFn: ReturnType<typeof useServerFn<typeof submitAttempt>>;
@@ -85,7 +86,7 @@ function TestRunner({
     setSubmitting(true);
     setErr(null);
     try {
-      const r = await submitFn({ data: { attemptId, answers } });
+      const r = await submitFn({ data: { attemptId, attemptSecret, answers } });
       setResult(r);
       onFinish();
     } catch (e) {
