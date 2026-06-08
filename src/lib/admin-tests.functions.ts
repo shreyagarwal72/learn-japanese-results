@@ -63,7 +63,7 @@ export const adminCreateTest = createServerFn({ method: "POST" })
 
 export const adminUpdateTest = createServerFn({ method: "POST" })
   .inputValidator((d: z.input<typeof testFields> & { id: string; password: string }) =>
-    withPw(testFields.extend({ id: z.string().uuid() })).parse(d),
+    withPw(testFieldsBase.extend({ id: z.string().uuid() }).refine(windowRefine, windowMsg)).parse(d),
   )
   .handler(async ({ data }) => {
     assertPassword(data.password);
