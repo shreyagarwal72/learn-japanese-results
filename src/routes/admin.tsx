@@ -1,11 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
 import {
+  adminVerifyPassword,
   adminListTests, adminCreateTest, adminUpdateTest, adminDeleteTest,
-  adminListQuestions, adminSaveQuestions, adminListAttempts, adminChangePassword,
+  adminListQuestions, adminSaveQuestions, adminListAttempts,
 } from "@/lib/admin-tests.functions";
 import { gradeColorClass } from "@/lib/config";
 
@@ -14,39 +14,82 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
+const PW_KEY = "jl_admin_pw";
+const getPw = () => (typeof window !== "undefined" ? sessionStorage.getItem(PW_KEY) ?? "" : "");
+const setPw = (pw: string) => sessionStorage.setItem(PW_KEY, pw);
+const clearPw = () => sessionStorage.removeItem(PW_KEY);
+
+function AdminPage() {
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const verify = useServerFn(adminVerifyPassword);
+
+  useEffect(() => {
+    const pw = getPw();
+    if (!pw) { setReady(true); return; }
+    verify({ data: { password: pw } })
+      .then(() => setAuthed(true))
+      .catch(() => clearPw())
+      .finally(() => setReady(true));
+  }, [verify]);
+
+  if (!ready) return null;
+  if (!authed) return <PasswordGate onOk={() => setAuthed(true)} />;
+  return <AdminDashboard onSignOut={() => { clearPw(); setAuthed(false); }} />;
+}
+
+function PasswordGate({ onOk }: { onOk: () => void }) {
+  const verify = useServerFn(adminVerifyPassword);
+  const [pw, setPwState] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      await verify({ data: { password: pw } });
+      setPw(pw);
+      onOk();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Invalid password");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-5 py-12">
+        <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">← Home</Link>
+        <header className="mt-8 text-center">
+          <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理</p>
+          <h1 className="mt-2 text-2xl font-serif-jp">Admin Access</h1>
+          <span className="accent-line mx-auto mt-3" />
+        </header>
+        <form onSubmit={submit} className="mt-8 space-y-4 border border-border bg-card p-6">
+          <label className="block">
+            <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</span>
+            <input
+              type="password" autoFocus value={pw}
+              onChange={(e) => setPwState(e.target.value)}
+              className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
+            />
+          </label>
+          {err && <p className="text-xs text-destructive">{err}</p>}
+          <button type="submit" disabled={busy || !pw} className="w-full bg-foreground py-3 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60">
+            {busy ? "Verifying…" : "Enter"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 type Test = Awaited<ReturnType<typeof adminListTests>>[number];
 type Question = Awaited<ReturnType<typeof adminListQuestions>>[number];
 type Attempt = Awaited<ReturnType<typeof adminListAttempts>>[number];
+type Tab = "tests" | "questions" | "attempts";
 
-function AdminPage() {
-  const navigate = useNavigate();
-  const [ready, setReady] = useState(false);
-  const [authed, setAuthed] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        navigate({ to: "/auth", replace: true });
-      } else {
-        setAuthed(true);
-      }
-      setReady(true);
-    });
-    const sub = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session) navigate({ to: "/auth", replace: true });
-    });
-    return () => { sub.data.subscription.unsubscribe(); };
-  }, [navigate]);
-
-  if (!ready) return null;
-  if (!authed) return null;
-  return <AdminDashboard />;
-}
-
-type Tab = "tests" | "questions" | "attempts" | "account";
-
-function AdminDashboard() {
-  const navigate = useNavigate();
+function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [tab, setTab] = useState<Tab>("tests");
   const [tests, setTests] = useState<Test[]>([]);
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
@@ -55,27 +98,22 @@ function AdminDashboard() {
   const listTests = useServerFn(adminListTests);
   const reload = useCallback(async () => {
     try {
-      const rows = await listTests();
+      const rows = await listTests({ data: { password: getPw() } });
       setTests(rows);
-      if (rows.length && !selectedTestId) setSelectedTestId(rows[0].id);
+      setSelectedTestId((prev) => prev && rows.some(r => r.id === prev) ? prev : (rows[0]?.id ?? null));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to load");
     }
-  }, [listTests, selectedTestId]);
+  }, [listTests]);
 
   useEffect(() => { void reload(); }, [reload]);
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
-  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-10">
         <div className="flex items-center justify-between gap-3">
           <Link to="/" className="text-xs uppercase tracking-[0.3em] text-muted-foreground hover:text-accent">← Site</Link>
-          <button onClick={signOut} className="text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-accent">Sign Out</button>
+          <button onClick={onSignOut} className="text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-accent">Lock</button>
         </div>
         <header className="mt-6">
           <p className="font-serif-jp text-sm tracking-[0.3em] text-muted-foreground">管理</p>
@@ -84,7 +122,7 @@ function AdminDashboard() {
         </header>
 
         <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
-          {(["tests", "questions", "attempts", "account"] as const).map((t) => (
+          {(["tests", "questions", "attempts"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -112,7 +150,9 @@ function AdminDashboard() {
           {tab === "tests" && <TestsTab tests={tests} onChange={reload} />}
           {tab === "questions" && selectedTestId && <QuestionsTab key={selectedTestId} testId={selectedTestId} />}
           {tab === "attempts" && selectedTestId && <AttemptsTab key={selectedTestId} testId={selectedTestId} test={tests.find(t => t.id === selectedTestId)} />}
-          {tab === "account" && <AccountTab />}
+          {tab !== "tests" && tests.length === 0 && (
+            <p className="text-sm text-muted-foreground">Create a test first.</p>
+          )}
         </div>
       </div>
     </div>
@@ -120,6 +160,15 @@ function AdminDashboard() {
 }
 
 // -------- Tests tab --------
+
+function statusOf(t: Test): { label: string; tone: string } {
+  const now = Date.now();
+  const from = new Date(t.available_from).getTime();
+  const until = new Date(t.available_until).getTime();
+  if (now < from) return { label: "Scheduled", tone: "text-muted-foreground border-border" };
+  if (now > until) return { label: "Closed", tone: "text-muted-foreground border-border" };
+  return { label: "Live", tone: "text-accent border-accent" };
+}
 
 function TestsTab({ tests, onChange }: { tests: Test[]; onChange: () => void }) {
   const [editing, setEditing] = useState<Test | "new" | null>(null);
@@ -133,30 +182,36 @@ function TestsTab({ tests, onChange }: { tests: Test[]; onChange: () => void }) 
       </div>
 
       <ul className="mt-4 space-y-2">
-        {tests.length === 0 && <li className="border border-border bg-card p-4 text-sm text-muted-foreground">No tests yet.</li>}
-        {tests.map((t) => (
-          <li key={t.id} className="border border-border bg-card p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="font-serif-jp text-base truncate">{t.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {Math.round(t.duration_seconds / 60)} min · {new Date(t.available_from).toLocaleString()} → {new Date(t.available_until).toLocaleString()}
-                </p>
+        {tests.length === 0 && <li className="border border-border bg-card p-4 text-sm text-muted-foreground">No tests yet. Click "+ New Test" to schedule one.</li>}
+        {tests.map((t) => {
+          const s = statusOf(t);
+          return (
+            <li key={t.id} className="border border-border bg-card p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-serif-jp text-base truncate">{t.title}</p>
+                    <span className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${s.tone}`}>{s.label}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {Math.round(t.duration_seconds / 60)} min · {new Date(t.available_from).toLocaleString()} → {new Date(t.available_until).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditing(t)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">Edit</button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Delete "${t.title}"? This removes all questions and attempts.`)) return;
+                      await del({ data: { id: t.id, password: getPw() } });
+                      onChange();
+                    }}
+                    className="border border-destructive/40 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-destructive hover:bg-destructive/10"
+                  >Delete</button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => setEditing(t)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">Edit</button>
-                <button
-                  onClick={async () => {
-                    if (!confirm(`Delete "${t.title}"? This removes all questions and attempts.`)) return;
-                    await del({ data: { id: t.id } });
-                    onChange();
-                  }}
-                  className="border border-destructive/40 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-destructive hover:bg-destructive/10"
-                >Delete</button>
-              </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
 
       {editing && <TestEditor test={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChange(); }} />}
@@ -185,6 +240,7 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
 
   const save = async () => {
     setErr(null);
+    if (new Date(until) <= new Date(from)) { setErr("Close time must be after open time."); return; }
     setBusy(true);
     try {
       const payload = {
@@ -193,8 +249,9 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
         available_from: new Date(from).toISOString(),
         available_until: new Date(until).toISOString(),
       };
-      if (test) await update({ data: { id: test.id, ...payload } });
-      else await create({ data: payload });
+      const password = getPw();
+      if (test) await update({ data: { id: test.id, password, ...payload } });
+      else await create({ data: { password, ...payload } });
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed");
@@ -206,19 +263,20 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-lg border border-border bg-card p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-serif-jp text-xl">{test ? "Edit Test" : "New Test"}</h3>
+        <h3 className="font-serif-jp text-xl">{test ? "Edit Test" : "Schedule New Test"}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">Test auto-publishes to the home page during its window.</p>
         <div className="mt-4 space-y-3">
           <Input label="Title" value={title} onChange={setTitle} />
           <label className="block">
             <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Description</span>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+            <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={2}
               className="mt-2 w-full border border-border bg-transparent px-2 py-2 text-sm outline-none focus:border-accent" />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <Input label="Duration (min)" type="number" value={String(duration)} onChange={(v) => setDuration(Number(v))} />
             <div />
-            <Input label="Opens" type="datetime-local" value={from} onChange={setFrom} />
-            <Input label="Closes" type="datetime-local" value={until} onChange={setUntil} />
+            <Input label="Opens at" type="datetime-local" value={from} onChange={setFrom} />
+            <Input label="Closes at" type="datetime-local" value={until} onChange={setUntil} />
           </div>
         </div>
         {err && <p className="mt-3 text-xs text-destructive">{err}</p>}
@@ -254,7 +312,7 @@ function QuestionsTab({ testId }: { testId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    list({ data: { testId } }).then((rows: Question[]) =>
+    list({ data: { testId, password: getPw() } }).then((rows: Question[]) =>
       setItems(rows.map((r) => ({
         id: r.id, position: r.position, prompt: r.prompt,
         options: r.options as DraftOption[], correct_option_id: r.correct_option_id, marks: r.marks,
@@ -279,7 +337,7 @@ function QuestionsTab({ testId }: { testId: string }) {
   const onSave = async () => {
     setBusy(true); setMsg(null);
     try {
-      await save({ data: { testId, questions: items.map((q, i) => ({ ...q, position: i })) } });
+      await save({ data: { testId, password: getPw(), questions: items.map((q, i) => ({ ...q, position: i })) } });
       setMsg("Saved.");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Save failed");
@@ -298,6 +356,7 @@ function QuestionsTab({ testId }: { testId: string }) {
       {msg && <p className="mt-3 text-xs text-muted-foreground">{msg}</p>}
 
       <ol className="mt-4 space-y-4">
+        {items.length === 0 && <li className="border border-border bg-card p-4 text-sm text-muted-foreground">No questions yet. Click "+ Add" to create one.</li>}
         {items.map((q, i) => (
           <li key={i} className="border border-border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
@@ -352,7 +411,7 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
   const list = useServerFn(adminListAttempts);
   const [rows, setRows] = useState<Attempt[] | null>(null);
 
-  useEffect(() => { list({ data: { testId } }).then(setRows); }, [list, testId]);
+  useEffect(() => { list({ data: { testId, password: getPw() } }).then(setRows); }, [list, testId]);
 
   const ranked = useMemo(() => {
     if (!rows) return [];
@@ -415,47 +474,6 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
           </tbody>
         </table>
       </div>
-    </section>
-  );
-}
-
-// -------- Account tab --------
-
-function AccountTab() {
-  const change = useServerFn(adminChangePassword);
-  const [pw, setPw] = useState("");
-  const [pw2, setPw2] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMsg(null); setErr(null);
-    if (pw.length < 8) { setErr("Password must be at least 8 characters."); return; }
-    if (pw !== pw2) { setErr("Passwords do not match."); return; }
-    setBusy(true);
-    try {
-      await change({ data: { newPassword: pw } });
-      setMsg("Password updated.");
-      setPw(""); setPw2("");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <section className="max-w-md">
-      <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Change Admin Password</h2>
-      <form onSubmit={onSubmit} className="mt-4 space-y-4 border border-border bg-card p-5">
-        <Input label="New password" type="password" value={pw} onChange={setPw} />
-        <Input label="Confirm password" type="password" value={pw2} onChange={setPw2} />
-        {err && <p className="text-xs text-destructive">{err}</p>}
-        {msg && <p className="text-xs text-accent">{msg}</p>}
-        <button type="submit" disabled={busy} className="w-full bg-foreground py-3 text-xs uppercase tracking-[0.2em] text-background hover:bg-accent disabled:opacity-60">
-          {busy ? "Updating…" : "Update Password"}
-        </button>
-      </form>
     </section>
   );
 }
