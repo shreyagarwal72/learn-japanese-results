@@ -44,7 +44,7 @@ function LiveTest() {
   }, [data, navigate, testId]);
 
   if (!data) return null;
-  return <TestRunner storageKey={storageKey} data={data} attemptId={attemptId} onFinish={() => sessionStorage.removeItem(storageKey)} submitFn={submitFn} />;
+  return <TestRunner storageKey={storageKey} data={data} attemptId={attemptId} attemptSecret={data.attemptSecret} onFinish={() => sessionStorage.removeItem(storageKey)} submitFn={submitFn} />;
 }
 
 // Stash data when /test/$testId starts an attempt — but routes don't share state.
