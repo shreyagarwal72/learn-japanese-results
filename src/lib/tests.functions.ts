@@ -94,6 +94,7 @@ export const startAttempt = createServerFn({ method: "POST" })
 
     const total = qs.reduce((s, q) => s + q.marks, 0);
 
+    const attemptSecret = randomBytes(32).toString("hex");
     const { data: att, error: aErr } = await supabaseAdmin
       .from("attempts")
       .insert({
@@ -102,6 +103,7 @@ export const startAttempt = createServerFn({ method: "POST" })
         started_at: now.toISOString(),
         deadline: deadline.toISOString(),
         total,
+        attempt_secret: attemptSecret,
       })
       .select("id,started_at,deadline")
       .single();
@@ -109,6 +111,7 @@ export const startAttempt = createServerFn({ method: "POST" })
 
     return {
       attemptId: att.id,
+      attemptSecret,
       startedAt: att.started_at,
       deadline: att.deadline,
       durationSeconds: test.duration_seconds,
@@ -125,9 +128,10 @@ export const startAttempt = createServerFn({ method: "POST" })
   });
 
 export const submitAttempt = createServerFn({ method: "POST" })
-  .inputValidator((d: { attemptId: string; answers: Record<string, string> }) =>
+  .inputValidator((d: { attemptId: string; attemptSecret: string; answers: Record<string, string> }) =>
     z.object({
       attemptId: z.string().uuid(),
+      attemptSecret: z.string().min(16).max(256),
       answers: z.record(z.string(), z.string()),
     }).parse(d),
   )
@@ -138,6 +142,18 @@ export const submitAttempt = createServerFn({ method: "POST" })
       .from("attempts").select("*").eq("id", data.attemptId).maybeSingle();
     if (aErr) throw new Error(aErr.message);
     if (!att) throw new Error("Attempt not found");
+
+    const storedSecret = (att as { attempt_secret: string | null }).attempt_secret ?? "";
+    const provided = Buffer.from(data.attemptSecret);
+    const expected = Buffer.from(storedSecret);
+    if (
+      storedSecret.length === 0 ||
+      provided.length !== expected.length ||
+      !timingSafeEqual(provided, expected)
+    ) {
+      throw new Error("Invalid attempt credentials");
+    }
+
     if (att.submitted_at) {
       return existingResult(att);
     }
