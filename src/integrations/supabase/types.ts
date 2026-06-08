@@ -17,6 +17,7 @@ export type Database = {
       attempts: {
         Row: {
           answers: Json | null
+          attempt_secret: string | null
           deadline: string
           grade: string | null
           id: string
@@ -30,6 +31,7 @@ export type Database = {
         }
         Insert: {
           answers?: Json | null
+          attempt_secret?: string | null
           deadline: string
           grade?: string | null
           id?: string
@@ -43,6 +45,7 @@ export type Database = {
         }
         Update: {
           answers?: Json | null
+          attempt_secret?: string | null
           deadline?: string
           grade?: string | null
           id?: string
