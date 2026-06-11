@@ -169,7 +169,8 @@ function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
           {tab === "tests" && <TestsTab tests={tests} onChange={reload} />}
           {tab === "questions" && selectedTestId && <QuestionsTab key={selectedTestId} testId={selectedTestId} />}
           {tab === "attempts" && selectedTestId && <AttemptsTab key={selectedTestId} testId={selectedTestId} test={tests.find(t => t.id === selectedTestId)} />}
-          {tab !== "tests" && tests.length === 0 && (
+          {tab === "audit" && <AuditTab />}
+          {(tab === "questions" || tab === "attempts") && tests.length === 0 && (
             <p className="text-sm text-muted-foreground">Create a test first.</p>
           )}
         </div>
