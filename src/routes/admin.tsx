@@ -500,3 +500,102 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
     </section>
   );
 }
+
+// -------- Audit tab --------
+
+function fmtDetails(d: unknown): string {
+  if (!d || typeof d !== "object") return "";
+  try {
+    const s = JSON.stringify(d);
+    return s === "{}" ? "" : s;
+  } catch { return ""; }
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  "auth.login": "Sign-in",
+  "test.create": "Test created",
+  "test.update": "Test updated",
+  "test.delete": "Test deleted",
+  "questions.save": "Questions saved",
+  "attempts.export": "Exported XLSX",
+};
+
+function AuditTab() {
+  const list = useServerFn(adminListAudit);
+  const [rows, setRows] = useState<AuditEntry[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  const load = useCallback(() => {
+    list({ data: { ...auth(), limit: 200 } })
+      .then((r) => setRows(r as AuditEntry[]))
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
+  }, [list]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    if (!rows) return [];
+    const needle = q.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((r) =>
+      r.action.toLowerCase().includes(needle) ||
+      r.actor_label.toLowerCase().includes(needle) ||
+      (r.target_id ?? "").toLowerCase().includes(needle),
+    );
+  }, [rows, q]);
+
+  return (
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+          Audit Log {rows && `(${rows.length})`}
+        </h2>
+        <div className="flex gap-2">
+          <input
+            value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="Filter by action / actor / id"
+            className="w-56 border border-border bg-card px-3 py-2 text-xs outline-none focus:border-accent"
+          />
+          <button onClick={load} className="border border-border px-3 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">Refresh</button>
+        </div>
+      </div>
+
+      {err && <p className="mt-3 text-xs text-destructive">{err}</p>}
+      {!rows && !err && <p className="mt-3 text-sm text-muted-foreground">Loading…</p>}
+
+      {rows && (
+        <div className="mt-4 overflow-x-auto border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-normal">When</th>
+                <th className="px-3 py-2 font-normal">Action</th>
+                <th className="px-3 py-2 font-normal">Actor</th>
+                <th className="px-3 py-2 font-normal">IP</th>
+                <th className="px-3 py-2 font-normal">Target</th>
+                <th className="px-3 py-2 font-normal">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No entries.</td></tr>
+              ) : filtered.map((r) => (
+                <tr key={r.id} className="border-t border-border align-top">
+                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2">{ACTION_LABELS[r.action] ?? r.action}</td>
+                  <td className="px-3 py-2">{r.actor_label}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{r.actor_ip ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {r.target_type ? <span>{r.target_type}{r.target_id ? `:${r.target_id.slice(0, 8)}…` : ""}</span> : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground"><code className="break-all">{fmtDetails(r.details)}</code></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
