@@ -43,10 +43,9 @@ async function logAudit(input: {
       actor_ip: getActorIp(),
       target_type: input.targetType ?? null,
       target_id: input.targetId ?? null,
-      details: input.details ?? {},
+      details: (input.details ?? {}) as never,
     });
   } catch (e) {
-    // never block the admin action on logging failure
     console.error("[audit] failed to log", e);
   }
 }
@@ -274,7 +273,7 @@ export type AuditEntry = {
   target_id: string | null;
   actor_label: string;
   actor_ip: string | null;
-  details: Record<string, unknown>;
+  details: unknown;
   created_at: string;
 };
 
