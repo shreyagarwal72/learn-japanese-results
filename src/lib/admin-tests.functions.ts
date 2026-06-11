@@ -266,6 +266,8 @@ export const adminLogExport = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
+
 export type AuditEntry = {
   id: string;
   action: string;
@@ -273,7 +275,7 @@ export type AuditEntry = {
   target_id: string | null;
   actor_label: string;
   actor_ip: string | null;
-  details: unknown;
+  details: JsonValue;
   created_at: string;
 };
 
@@ -292,5 +294,5 @@ export const adminListAudit = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false })
       .limit(data.limit);
     if (error) throw new Error(error.message);
-    return (rows ?? []) as AuditEntry[];
+    return (rows ?? []) as unknown as AuditEntry[];
   });
