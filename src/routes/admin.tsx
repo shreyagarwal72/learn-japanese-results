@@ -214,8 +214,14 @@ function TestsTab({ tests, onChange }: { tests: Test[]; onChange: () => void }) 
                     <span className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${s.tone}`}>{s.label}</span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {Math.round(t.duration_seconds / 60)} min · {new Date(t.available_from).toLocaleString()} → {new Date(t.available_until).toLocaleString()}
+                    {Math.round(t.duration_seconds / 60)} min · {t.total_marks} marks · {new Date(t.available_from).toLocaleString()} → {new Date(t.available_until).toLocaleString()}
                   </p>
+                  {(t.question_paper_url || t.answer_key_url) && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t.question_paper_url && <span className="mr-3">📄 Question Paper</span>}
+                      {t.answer_key_url && <span>🔑 Answer Key</span>}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEditing(t)} className="border border-border px-3 py-1.5 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">Edit</button>
@@ -255,6 +261,9 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
   const [duration, setDuration] = useState(test ? Math.round(test.duration_seconds / 60) : 30);
   const [from, setFrom] = useState(test ? toLocalInput(test.available_from) : toLocalInput(now.toISOString()));
   const [until, setUntil] = useState(test ? toLocalInput(test.available_until) : toLocalInput(oneHr.toISOString()));
+  const [totalMarks, setTotalMarks] = useState(test?.total_marks ?? 50);
+  const [questionPaperUrl, setQuestionPaperUrl] = useState(test?.question_paper_url ?? "");
+  const [answerKeyUrl, setAnswerKeyUrl] = useState(test?.answer_key_url ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -268,6 +277,9 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
         duration_seconds: Math.max(30, Math.round(duration * 60)),
         available_from: new Date(from).toISOString(),
         available_until: new Date(until).toISOString(),
+        total_marks: Math.max(1, totalMarks),
+        question_paper_url: questionPaperUrl.trim() || null,
+        answer_key_url: answerKeyUrl.trim() || null,
       };
       const a = auth();
       if (test) await update({ data: { id: test.id, ...a, ...payload } });
@@ -282,7 +294,7 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg border border-border bg-card p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg border border-border bg-card p-6 overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-serif-jp text-xl">{test ? "Edit Test" : "Schedule New Test"}</h3>
         <p className="mt-1 text-xs text-muted-foreground">Test auto-publishes to the home page during its window.</p>
         <div className="mt-4 space-y-3">
@@ -293,10 +305,17 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
               className="mt-2 w-full border border-border bg-transparent px-2 py-2 text-sm outline-none focus:border-accent" />
           </label>
           <div className="grid grid-cols-2 gap-3">
+            <Input label="Total Marks" type="number" value={String(totalMarks)} onChange={(v) => setTotalMarks(Math.max(1, Number(v) || 1))} />
             <Input label="Duration (min)" type="number" value={String(duration)} onChange={(v) => setDuration(Number(v))} />
-            <div />
             <Input label="Opens at" type="datetime-local" value={from} onChange={setFrom} />
             <Input label="Closes at" type="datetime-local" value={until} onChange={setUntil} />
+          </div>
+          <div className="border-t border-border pt-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">PDF Links (optional)</p>
+            <div className="space-y-3">
+              <Input label="Question Paper URL" value={questionPaperUrl} onChange={setQuestionPaperUrl} />
+              <Input label="Answer Key URL" value={answerKeyUrl} onChange={setAnswerKeyUrl} />
+            </div>
           </div>
         </div>
         {err && <p className="mt-3 text-xs text-destructive">{err}</p>}
