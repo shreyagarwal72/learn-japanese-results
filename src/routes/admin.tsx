@@ -6,6 +6,8 @@ import {
   adminVerifyPassword,
   adminListTests, adminCreateTest, adminUpdateTest, adminDeleteTest,
   adminListQuestions, adminSaveQuestions, adminListAttempts,
+  adminListAudit, adminLogExport,
+  type AuditEntry,
 } from "@/lib/admin-tests.functions";
 import { gradeColorClass } from "@/lib/config";
 
@@ -15,9 +17,13 @@ export const Route = createFileRoute("/admin")({
 });
 
 const PW_KEY = "jl_admin_pw";
+const LABEL_KEY = "jl_admin_label";
 const getPw = () => (typeof window !== "undefined" ? sessionStorage.getItem(PW_KEY) ?? "" : "");
 const setPw = (pw: string) => sessionStorage.setItem(PW_KEY, pw);
-const clearPw = () => sessionStorage.removeItem(PW_KEY);
+const clearPw = () => { sessionStorage.removeItem(PW_KEY); sessionStorage.removeItem(LABEL_KEY); };
+const getLabel = () => (typeof window !== "undefined" ? sessionStorage.getItem(LABEL_KEY) ?? "admin" : "admin");
+const setLabel = (l: string) => sessionStorage.setItem(LABEL_KEY, l);
+const auth = () => ({ password: getPw(), actorLabel: getLabel() });
 
 function AdminPage() {
   const [ready, setReady] = useState(false);
