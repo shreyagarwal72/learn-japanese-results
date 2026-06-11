@@ -33,7 +33,7 @@ function AdminPage() {
   useEffect(() => {
     const pw = getPw();
     if (!pw) { setReady(true); return; }
-    verify({ data: { password: pw } })
+    verify({ data: { password: pw, actorLabel: getLabel() } })
       .then(() => setAuthed(true))
       .catch(() => clearPw())
       .finally(() => setReady(true));
@@ -106,7 +106,7 @@ function PasswordGate({ onOk }: { onOk: () => void }) {
 type Test = Awaited<ReturnType<typeof adminListTests>>[number];
 type Question = Awaited<ReturnType<typeof adminListQuestions>>[number];
 type Attempt = Awaited<ReturnType<typeof adminListAttempts>>[number];
-type Tab = "tests" | "questions" | "attempts";
+type Tab = "tests" | "questions" | "attempts" | "audit";
 
 function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [tab, setTab] = useState<Tab>("tests");
@@ -141,7 +141,7 @@ function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
         </header>
 
         <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
-          {(["tests", "questions", "attempts"] as const).map((t) => (
+          {(["tests", "questions", "attempts", "audit"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
