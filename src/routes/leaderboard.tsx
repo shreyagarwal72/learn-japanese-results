@@ -8,8 +8,11 @@ export const Route = createFileRoute("/leaderboard")({
   head: () => ({
     meta: [
       { title: "Leaderboard — Japanese Learning For All" },
-      { name: "description", content: "Test leaderboards unlock the next day at 9 AM." },
+      { name: "description", content: "Per-test leaderboards unlock the next day at 9 AM IST. See ranked scores, percentages, and letter grades." },
+      { property: "og:title", content: "Leaderboard — Japanese Learning For All" },
+      { property: "og:description", content: "Ranked results by test. Unlocks the morning after the test closes." },
     ],
+    links: [{ rel: "canonical", href: "/leaderboard" }],
   }),
   component: LeaderboardPage,
 });

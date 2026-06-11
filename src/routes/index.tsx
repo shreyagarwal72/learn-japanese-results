@@ -6,9 +6,14 @@ import { listAvailableTests, type AvailableTest } from "@/lib/tests.functions";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Japanese Learning For All — Live Tests" },
-      { name: "description", content: "Take timed Japanese tests online. Results unlock the next day at 9 AM." },
+      { title: "Japanese Learning For All — Live Timed Japanese Tests" },
+      { name: "description", content: "Take live, timed Japanese MCQ tests online. Auto-graded with letter grades; leaderboards unlock the next morning at 9 AM IST." },
+      { property: "og:title", content: "Japanese Learning For All — Live Timed Japanese Tests" },
+      { property: "og:description", content: "Take live, timed Japanese MCQ tests online. Leaderboards unlock the next morning." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
+    links: [{ rel: "canonical", href: "/" }],
   }),
   component: Home,
 });

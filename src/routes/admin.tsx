@@ -6,6 +6,8 @@ import {
   adminVerifyPassword,
   adminListTests, adminCreateTest, adminUpdateTest, adminDeleteTest,
   adminListQuestions, adminSaveQuestions, adminListAttempts,
+  adminListAudit, adminLogExport,
+  type AuditEntry,
 } from "@/lib/admin-tests.functions";
 import { gradeColorClass } from "@/lib/config";
 
@@ -15,9 +17,13 @@ export const Route = createFileRoute("/admin")({
 });
 
 const PW_KEY = "jl_admin_pw";
+const LABEL_KEY = "jl_admin_label";
 const getPw = () => (typeof window !== "undefined" ? sessionStorage.getItem(PW_KEY) ?? "" : "");
 const setPw = (pw: string) => sessionStorage.setItem(PW_KEY, pw);
-const clearPw = () => sessionStorage.removeItem(PW_KEY);
+const clearPw = () => { sessionStorage.removeItem(PW_KEY); sessionStorage.removeItem(LABEL_KEY); };
+const getLabel = () => (typeof window !== "undefined" ? sessionStorage.getItem(LABEL_KEY) ?? "admin" : "admin");
+const setLabel = (l: string) => sessionStorage.setItem(LABEL_KEY, l);
+const auth = () => ({ password: getPw(), actorLabel: getLabel() });
 
 function AdminPage() {
   const [ready, setReady] = useState(false);
@@ -27,7 +33,7 @@ function AdminPage() {
   useEffect(() => {
     const pw = getPw();
     if (!pw) { setReady(true); return; }
-    verify({ data: { password: pw } })
+    verify({ data: { password: pw, actorLabel: getLabel() } })
       .then(() => setAuthed(true))
       .catch(() => clearPw())
       .finally(() => setReady(true));
@@ -41,6 +47,7 @@ function AdminPage() {
 function PasswordGate({ onOk }: { onOk: () => void }) {
   const verify = useServerFn(adminVerifyPassword);
   const [pw, setPwState] = useState("");
+  const [label, setLabelState] = useState(getLabel() === "admin" ? "" : getLabel());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -48,8 +55,10 @@ function PasswordGate({ onOk }: { onOk: () => void }) {
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
-      await verify({ data: { password: pw } });
+      const actorLabel = label.trim() || "admin";
+      await verify({ data: { password: pw, actorLabel } });
       setPw(pw);
+      setLabel(actorLabel);
       onOk();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Invalid password");
@@ -67,9 +76,19 @@ function PasswordGate({ onOk }: { onOk: () => void }) {
         </header>
         <form onSubmit={submit} className="mt-8 space-y-4 border border-border bg-card p-6">
           <label className="block">
+            <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Your name / initials</span>
+            <input
+              type="text" autoFocus value={label} maxLength={80}
+              placeholder="e.g. Riya M."
+              onChange={(e) => setLabelState(e.target.value)}
+              className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
+            />
+            <span className="mt-1 block text-[10px] text-muted-foreground">Recorded on every action in the audit log.</span>
+          </label>
+          <label className="block">
             <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</span>
             <input
-              type="password" autoFocus value={pw}
+              type="password" value={pw}
               onChange={(e) => setPwState(e.target.value)}
               className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
             />
@@ -87,7 +106,7 @@ function PasswordGate({ onOk }: { onOk: () => void }) {
 type Test = Awaited<ReturnType<typeof adminListTests>>[number];
 type Question = Awaited<ReturnType<typeof adminListQuestions>>[number];
 type Attempt = Awaited<ReturnType<typeof adminListAttempts>>[number];
-type Tab = "tests" | "questions" | "attempts";
+type Tab = "tests" | "questions" | "attempts" | "audit";
 
 function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [tab, setTab] = useState<Tab>("tests");
@@ -98,7 +117,7 @@ function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
   const listTests = useServerFn(adminListTests);
   const reload = useCallback(async () => {
     try {
-      const rows = await listTests({ data: { password: getPw() } });
+      const rows = await listTests({ data: auth() });
       setTests(rows);
       setSelectedTestId((prev) => prev && rows.some(r => r.id === prev) ? prev : (rows[0]?.id ?? null));
     } catch (e) {
@@ -122,7 +141,7 @@ function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
         </header>
 
         <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
-          {(["tests", "questions", "attempts"] as const).map((t) => (
+          {(["tests", "questions", "attempts", "audit"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -150,7 +169,8 @@ function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
           {tab === "tests" && <TestsTab tests={tests} onChange={reload} />}
           {tab === "questions" && selectedTestId && <QuestionsTab key={selectedTestId} testId={selectedTestId} />}
           {tab === "attempts" && selectedTestId && <AttemptsTab key={selectedTestId} testId={selectedTestId} test={tests.find(t => t.id === selectedTestId)} />}
-          {tab !== "tests" && tests.length === 0 && (
+          {tab === "audit" && <AuditTab />}
+          {(tab === "questions" || tab === "attempts") && tests.length === 0 && (
             <p className="text-sm text-muted-foreground">Create a test first.</p>
           )}
         </div>
@@ -202,7 +222,7 @@ function TestsTab({ tests, onChange }: { tests: Test[]; onChange: () => void }) 
                   <button
                     onClick={async () => {
                       if (!confirm(`Delete "${t.title}"? This removes all questions and attempts.`)) return;
-                      await del({ data: { id: t.id, password: getPw() } });
+                      await del({ data: { id: t.id, ...auth() } });
                       onChange();
                     }}
                     className="border border-destructive/40 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-destructive hover:bg-destructive/10"
@@ -249,9 +269,9 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
         available_from: new Date(from).toISOString(),
         available_until: new Date(until).toISOString(),
       };
-      const password = getPw();
-      if (test) await update({ data: { id: test.id, password, ...payload } });
-      else await create({ data: { password, ...payload } });
+      const a = auth();
+      if (test) await update({ data: { id: test.id, ...a, ...payload } });
+      else await create({ data: { ...a, ...payload } });
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed");
@@ -312,7 +332,7 @@ function QuestionsTab({ testId }: { testId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    list({ data: { testId, password: getPw() } }).then((rows: Question[]) =>
+    list({ data: { testId, ...auth() } }).then((rows: Question[]) =>
       setItems(rows.map((r) => ({
         id: r.id, position: r.position, prompt: r.prompt,
         options: r.options as DraftOption[], correct_option_id: r.correct_option_id, marks: r.marks,
@@ -337,7 +357,7 @@ function QuestionsTab({ testId }: { testId: string }) {
   const onSave = async () => {
     setBusy(true); setMsg(null);
     try {
-      await save({ data: { testId, password: getPw(), questions: items.map((q, i) => ({ ...q, position: i })) } });
+      await save({ data: { testId, ...auth(), questions: items.map((q, i) => ({ ...q, position: i })) } });
       setMsg("Saved.");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Save failed");
@@ -409,9 +429,10 @@ function QuestionsTab({ testId }: { testId: string }) {
 
 function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
   const list = useServerFn(adminListAttempts);
+  const logExport = useServerFn(adminLogExport);
   const [rows, setRows] = useState<Attempt[] | null>(null);
 
-  useEffect(() => { list({ data: { testId, password: getPw() } }).then(setRows); }, [list, testId]);
+  useEffect(() => { list({ data: { testId, ...auth() } }).then(setRows); }, [list, testId]);
 
   const ranked = useMemo(() => {
     if (!rows) return [];
@@ -425,7 +446,7 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
     });
   }, [rows]);
 
-  const exportXlsx = () => {
+  const exportXlsx = async () => {
     const sheet = ranked.map((r) => ({
       Rank: r.rank, Name: r.student_name, Score: r.score, Total: r.total,
       "Percentage (%)": Number((r.percentage ?? 0).toFixed(2)), Grade: r.grade,
@@ -435,7 +456,9 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Attempts");
     XLSX.writeFile(wb, `attempts-${(test?.title ?? "test").replace(/\s+/g, "_")}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try { await logExport({ data: { testId, rowCount: ranked.length, ...auth() } }); } catch { /* noop */ }
   };
+
 
   if (!rows) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
@@ -474,6 +497,105 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// -------- Audit tab --------
+
+function fmtDetails(d: unknown): string {
+  if (!d || typeof d !== "object") return "";
+  try {
+    const s = JSON.stringify(d);
+    return s === "{}" ? "" : s;
+  } catch { return ""; }
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  "auth.login": "Sign-in",
+  "test.create": "Test created",
+  "test.update": "Test updated",
+  "test.delete": "Test deleted",
+  "questions.save": "Questions saved",
+  "attempts.export": "Exported XLSX",
+};
+
+function AuditTab() {
+  const list = useServerFn(adminListAudit);
+  const [rows, setRows] = useState<AuditEntry[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  const load = useCallback(() => {
+    list({ data: { ...auth(), limit: 200 } })
+      .then((r) => setRows(r as AuditEntry[]))
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "Failed to load"));
+  }, [list]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    if (!rows) return [];
+    const needle = q.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((r) =>
+      r.action.toLowerCase().includes(needle) ||
+      r.actor_label.toLowerCase().includes(needle) ||
+      (r.target_id ?? "").toLowerCase().includes(needle),
+    );
+  }, [rows, q]);
+
+  return (
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+          Audit Log {rows && `(${rows.length})`}
+        </h2>
+        <div className="flex gap-2">
+          <input
+            value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="Filter by action / actor / id"
+            className="w-56 border border-border bg-card px-3 py-2 text-xs outline-none focus:border-accent"
+          />
+          <button onClick={load} className="border border-border px-3 py-2 text-xs uppercase tracking-[0.2em] hover:border-accent hover:text-accent">Refresh</button>
+        </div>
+      </div>
+
+      {err && <p className="mt-3 text-xs text-destructive">{err}</p>}
+      {!rows && !err && <p className="mt-3 text-sm text-muted-foreground">Loading…</p>}
+
+      {rows && (
+        <div className="mt-4 overflow-x-auto border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-normal">When</th>
+                <th className="px-3 py-2 font-normal">Action</th>
+                <th className="px-3 py-2 font-normal">Actor</th>
+                <th className="px-3 py-2 font-normal">IP</th>
+                <th className="px-3 py-2 font-normal">Target</th>
+                <th className="px-3 py-2 font-normal">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No entries.</td></tr>
+              ) : filtered.map((r) => (
+                <tr key={r.id} className="border-t border-border align-top">
+                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2">{ACTION_LABELS[r.action] ?? r.action}</td>
+                  <td className="px-3 py-2">{r.actor_label}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{r.actor_ip ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {r.target_type ? <span>{r.target_type}{r.target_id ? `:${r.target_id.slice(0, 8)}…` : ""}</span> : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground"><code className="break-all">{fmtDetails(r.details)}</code></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
