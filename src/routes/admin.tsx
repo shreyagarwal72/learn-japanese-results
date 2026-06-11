@@ -117,7 +117,7 @@ function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
   const listTests = useServerFn(adminListTests);
   const reload = useCallback(async () => {
     try {
-      const rows = await listTests({ data: { password: getPw() } });
+      const rows = await listTests({ data: auth() });
       setTests(rows);
       setSelectedTestId((prev) => prev && rows.some(r => r.id === prev) ? prev : (rows[0]?.id ?? null));
     } catch (e) {
@@ -221,7 +221,7 @@ function TestsTab({ tests, onChange }: { tests: Test[]; onChange: () => void }) 
                   <button
                     onClick={async () => {
                       if (!confirm(`Delete "${t.title}"? This removes all questions and attempts.`)) return;
-                      await del({ data: { id: t.id, password: getPw() } });
+                      await del({ data: { id: t.id, ...auth() } });
                       onChange();
                     }}
                     className="border border-destructive/40 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-destructive hover:bg-destructive/10"
@@ -331,7 +331,7 @@ function QuestionsTab({ testId }: { testId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    list({ data: { testId, password: getPw() } }).then((rows: Question[]) =>
+    list({ data: { testId, ...auth() } }).then((rows: Question[]) =>
       setItems(rows.map((r) => ({
         id: r.id, position: r.position, prompt: r.prompt,
         options: r.options as DraftOption[], correct_option_id: r.correct_option_id, marks: r.marks,
@@ -356,7 +356,7 @@ function QuestionsTab({ testId }: { testId: string }) {
   const onSave = async () => {
     setBusy(true); setMsg(null);
     try {
-      await save({ data: { testId, password: getPw(), questions: items.map((q, i) => ({ ...q, position: i })) } });
+      await save({ data: { testId, ...auth(), questions: items.map((q, i) => ({ ...q, position: i })) } });
       setMsg("Saved.");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Save failed");
@@ -430,7 +430,7 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
   const list = useServerFn(adminListAttempts);
   const [rows, setRows] = useState<Attempt[] | null>(null);
 
-  useEffect(() => { list({ data: { testId, password: getPw() } }).then(setRows); }, [list, testId]);
+  useEffect(() => { list({ data: { testId, ...auth() } }).then(setRows); }, [list, testId]);
 
   const ranked = useMemo(() => {
     if (!rows) return [];
