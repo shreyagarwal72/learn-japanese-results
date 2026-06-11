@@ -76,7 +76,7 @@ export const adminListTests = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows, error } = await supabaseAdmin
       .from("tests")
-      .select("id,title,description,duration_seconds,available_from,available_until,created_at")
+      .select("id,title,description,duration_seconds,available_from,available_until,total_marks,question_paper_url,answer_key_url,created_at")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return rows ?? [];
@@ -88,6 +88,9 @@ const testFieldsBase = z.object({
   duration_seconds: z.number().int().min(30).max(60 * 60 * 6),
   available_from: z.string().datetime({ offset: true }),
   available_until: z.string().datetime({ offset: true }),
+  total_marks: z.number().int().min(1).max(10000).default(50),
+  question_paper_url: z.string().url().optional().nullable(),
+  answer_key_url: z.string().url().optional().nullable(),
 });
 const windowRefine = (v: { available_from: string; available_until: string }) =>
   new Date(v.available_until).getTime() > new Date(v.available_from).getTime();
@@ -110,7 +113,7 @@ export const adminCreateTest = createServerFn({ method: "POST" })
       actorLabel,
       targetType: "test",
       targetId: row.id,
-      details: { title: row.title, available_from: row.available_from, available_until: row.available_until, duration_seconds: row.duration_seconds },
+      details: { title: row.title, available_from: row.available_from, available_until: row.available_until, duration_seconds: row.duration_seconds, total_marks: row.total_marks },
     });
     return row;
   });
@@ -131,7 +134,7 @@ export const adminUpdateTest = createServerFn({ method: "POST" })
       actorLabel,
       targetType: "test",
       targetId: id,
-      details: { title: row.title, available_from: row.available_from, available_until: row.available_until, duration_seconds: row.duration_seconds },
+      details: { title: row.title, available_from: row.available_from, available_until: row.available_until, duration_seconds: row.duration_seconds, total_marks: row.total_marks },
     });
     return row;
   });
