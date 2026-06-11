@@ -47,6 +47,7 @@ function AdminPage() {
 function PasswordGate({ onOk }: { onOk: () => void }) {
   const verify = useServerFn(adminVerifyPassword);
   const [pw, setPwState] = useState("");
+  const [label, setLabelState] = useState(getLabel() === "admin" ? "" : getLabel());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -54,8 +55,10 @@ function PasswordGate({ onOk }: { onOk: () => void }) {
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
-      await verify({ data: { password: pw } });
+      const actorLabel = label.trim() || "admin";
+      await verify({ data: { password: pw, actorLabel } });
       setPw(pw);
+      setLabel(actorLabel);
       onOk();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Invalid password");
@@ -73,9 +76,19 @@ function PasswordGate({ onOk }: { onOk: () => void }) {
         </header>
         <form onSubmit={submit} className="mt-8 space-y-4 border border-border bg-card p-6">
           <label className="block">
+            <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Your name / initials</span>
+            <input
+              type="text" autoFocus value={label} maxLength={80}
+              placeholder="e.g. Riya M."
+              onChange={(e) => setLabelState(e.target.value)}
+              className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
+            />
+            <span className="mt-1 block text-[10px] text-muted-foreground">Recorded on every action in the audit log.</span>
+          </label>
+          <label className="block">
             <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Password</span>
             <input
-              type="password" autoFocus value={pw}
+              type="password" value={pw}
               onChange={(e) => setPwState(e.target.value)}
               className="mt-2 w-full border-b border-border bg-transparent px-1 py-2 text-sm outline-none focus:border-accent"
             />
