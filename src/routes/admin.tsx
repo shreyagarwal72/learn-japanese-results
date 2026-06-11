@@ -268,9 +268,9 @@ function TestEditor({ test, onClose, onSaved }: { test: Test | null; onClose: ()
         available_from: new Date(from).toISOString(),
         available_until: new Date(until).toISOString(),
       };
-      const password = getPw();
-      if (test) await update({ data: { id: test.id, password, ...payload } });
-      else await create({ data: { password, ...payload } });
+      const a = auth();
+      if (test) await update({ data: { id: test.id, ...a, ...payload } });
+      else await create({ data: { ...a, ...payload } });
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed");
