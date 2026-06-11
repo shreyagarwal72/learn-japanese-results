@@ -429,6 +429,7 @@ function QuestionsTab({ testId }: { testId: string }) {
 
 function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
   const list = useServerFn(adminListAttempts);
+  const logExport = useServerFn(adminLogExport);
   const [rows, setRows] = useState<Attempt[] | null>(null);
 
   useEffect(() => { list({ data: { testId, ...auth() } }).then(setRows); }, [list, testId]);
@@ -445,7 +446,7 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
     });
   }, [rows]);
 
-  const exportXlsx = () => {
+  const exportXlsx = async () => {
     const sheet = ranked.map((r) => ({
       Rank: r.rank, Name: r.student_name, Score: r.score, Total: r.total,
       "Percentage (%)": Number((r.percentage ?? 0).toFixed(2)), Grade: r.grade,
@@ -455,7 +456,9 @@ function AttemptsTab({ testId, test }: { testId: string; test?: Test }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Attempts");
     XLSX.writeFile(wb, `attempts-${(test?.title ?? "test").replace(/\s+/g, "_")}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try { await logExport({ data: { testId, rowCount: ranked.length, ...auth() } }); } catch { /* noop */ }
   };
+
 
   if (!rows) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
